@@ -1,7 +1,7 @@
 // exercise.js — 运动打卡独立模块：记录运动、查看历史、统计
 import { registerStandalone, Icons } from '../../registry.js';
 import { Storage } from '../../storage.js';
-import { openModal, closeModal, toast, fmtDate, dateKey, escapeHtml } from '../../ui.js';
+import { openModal, closeModal, confirmDialog, toast, fmtDate, dateKey, escapeHtml } from '../../ui.js';
 
 const KEY = 'exercise_records';
 
@@ -86,7 +86,8 @@ function renderList(container) {
   `).join('');
 
   el.querySelectorAll('[data-ex-del]').forEach(btn => {
-    btn.onclick = () => {
+    btn.onclick = async () => {
+      if (!await confirmDialog({ title: '删除', message: '确定删除这条运动记录吗？', confirmText: '删除', danger: true })) return;
       const data = loadData().filter(r => r.id !== btn.dataset.exDel);
       saveData(data);
       toast('已删除');

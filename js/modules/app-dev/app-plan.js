@@ -1,7 +1,7 @@
 // app-plan.js — APP发财计划：苹果 App 开发规划
 import { registerStandalone, Icons } from '../../registry.js';
 import { Storage } from '../../storage.js';
-import { openModal, closeModal, toast, fmtDate, escapeHtml } from '../../ui.js';
+import { openModal, closeModal, confirmDialog, toast, fmtDate, escapeHtml } from '../../ui.js';
 
 const KEY = 'app_ideas';
 
@@ -89,7 +89,8 @@ function renderList(container) {
     btn.onclick = () => openAddModal(container, btn.dataset.appEdit);
   });
   el.querySelectorAll('[data-app-del]').forEach(btn => {
-    btn.onclick = () => {
+    btn.onclick = async () => {
+      if (!await confirmDialog({ title: '删除', message: '确定删除这个 App 计划吗？', confirmText: '删除', danger: true })) return;
       const data = loadData().filter(r => r.id !== btn.dataset.appDel);
       saveData(data);
       toast('已删除');

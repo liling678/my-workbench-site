@@ -54,8 +54,8 @@ function extractFromJina(md) {
   return { title, account: '', text: body.trim() };
 }
 
-// 依次尝试多个通道抓取文章
-async function fetchArticle(url, onStatus) {
+// 依次尝试多个通道抓取文章（导出给其他模块复用，如宠物灵感库）
+export async function fetchArticle(url, onStatus) {
   const channels = [
     {
       name: '文本代理(jina)',

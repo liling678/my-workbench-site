@@ -3,11 +3,22 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v17';
+export const APP_VERSION = 'v18';
 export const APP_DATE = '2026-07-27';
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v18', date: '2026-07-27',
+    items: [
+      '修复：图片库「清空」后又自动补回的 bug（清空后禁止自动补录，需要历史图可点「从文章库补录」）',
+      '配图真实感升级：强制「真实摄影照片」风格（胶片质感/浅景深/暖色调），禁插画CG感、禁手部/人脸/屏幕/文字',
+      '宠物灵感库链接解析简化：粘链接点「确定」即自动抓取+AI总结入库（无需复制 prompt 给外部 AI）',
+      '弹窗防误关：点遮罩不再直接关闭，改为抖动提示；未填写时弹窗保持并提示「请填写」（所有弹窗统一）',
+      '所有删除按钮统一加二次确认弹窗（宠物灵感/账号、运动打卡、赚钱点子、测试点、心情日记、Better Me、首页任务等）',
+      '首页每日一句新增英文对照',
+    ],
+  },
   {
     version: 'v17', date: '2026-07-27',
     items: [

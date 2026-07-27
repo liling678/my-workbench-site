@@ -130,11 +130,12 @@ function renderReflectList(container) {
     btn.onclick = () => openDialogModal(btn.dataset.refDialog, container);
   });
   el.querySelectorAll('[data-ref-del]').forEach(btn => {
-    btn.onclick = () => {
-      const data = loadData().filter(r => r.id !== btn.dataset.refDel);
-      saveData(data);
-      toast('已删除');
-      renderReflectList(container);
+    btn.onclick = async () => {
+      if (await confirmDialog({ title: '删除', message: '确定删除这条记录吗？', confirmText: '删除', danger: true })) {
+        saveData(loadData().filter(r => r.id !== btn.dataset.refDel));
+        toast('已删除');
+        renderReflectList(container);
+      }
     };
   });
 }
@@ -283,7 +284,8 @@ function renderHappyList(container) {
     </div>
   `).join('');
   el.querySelectorAll('[data-happy-del]').forEach(btn => {
-    btn.onclick = () => {
+    btn.onclick = async () => {
+      if (!await confirmDialog({ title: '删除', message: '确定删除这条开心记录吗？', confirmText: '删除', danger: true })) return;
       saveHappy(loadHappy().filter(r => r.id !== btn.dataset.happyDel));
       toast('已删除');
       renderHappyList(container);
@@ -354,7 +356,8 @@ function renderSoulList(container) {
     </div>
   `).join('');
   el.querySelectorAll('[data-soul-del]').forEach(btn => {
-    btn.onclick = () => {
+    btn.onclick = async () => {
+      if (!await confirmDialog({ title: '删除', message: '确定删除这个句子吗？', confirmText: '删除', danger: true })) return;
       saveSoul(loadSoul().filter(r => r.id !== btn.dataset.soulDel));
       toast('已删除');
       renderSoulList(container);

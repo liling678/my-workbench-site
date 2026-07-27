@@ -1,7 +1,9 @@
-// inspiration.js — 宠物bot / 灵感库：自动搜集爆款宠物视频总结 + 手动记录灵感/对标账号 + 链接解析
+// inspiration.js — 宠物bot / 灵感库：自动搜集爆款宠物视频总结 + 手动记录灵感/对标账号 + 链接一键解析
 import { registerModule, Icons } from '../../registry.js';
 import { Storage } from '../../storage.js';
-import { openModal, closeModal, toast, fmtDate, escapeHtml, copyText } from '../../ui.js';
+import { openModal, closeModal, confirmDialog, toast, fmtDate, escapeHtml } from '../../ui.js';
+import { fetchArticle } from '../wechat/benchmark-articles.js';
+import { hasAiConfig, aiChatStream } from '../../ai-service.js';
 
 const KEY = 'pet_inspirations';
 const ACCOUNTS_KEY = 'pet_benchmark_accounts';
@@ -34,16 +36,24 @@ export function initInspiration() {
           <div class="page-desc">记录宠物视频灵感、对标账号、爆款视频总结</div>
         </div>
 
+        <div class="card card-pad mb-16">
+          <div style="font-size:13px;font-weight:600;margin-bottom:10px">⚡ 快速添加：粘贴链接自动解析</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <input class="input" id="petQuickLink" placeholder="粘贴视频/文章链接，回车或点确定自动解析…" style="flex:1;min-width:200px">
+            <button class="btn btn-primary" id="petQuickBtn">${Icons.sparkles} 确定</button>
+          </div>
+          <div id="petQuickStatus" style="font-size:12px;color:var(--text-muted);margin-top:8px"></div>
+        </div>
+
         <div class="flex gap-8 mb-16" style="flex-wrap:wrap">
           <button class="btn btn-primary" id="addInspirationBtn">${Icons.plus} 添加灵感</button>
           <button class="btn" id="addAccountBtn">${Icons.plus} 添加对标账号</button>
-          <button class="btn" id="parseLinkBtn">${Icons.link} 通过链接解析</button>
         </div>
 
         <div class="section-title">对标账号 <span class="cat-count">${accounts.length}</span></div>
         <div id="accountList" style="margin-bottom:20px"></div>
 
-        <div class="section-title">灵感列表 <span class="cat-count">${data.length}</span></div>
+        <div class="section-title">灵感列表 <span class="cat-count" id="inspCount">${data.length}</span></div>
         <div id="inspirationList"></div>
       `;
 
@@ -52,7 +62,10 @@ export function initInspiration() {
 
       container.querySelector('#addInspirationBtn').onclick = () => openAddModal(container);
       container.querySelector('#addAccountBtn').onclick = () => openAccountModal(container);
-      container.querySelector('#parseLinkBtn').onclick = () => openParseLinkModal(container);
+      container.querySelector('#petQuickBtn').onclick = () => quickParseLink(container);
+      container.querySelector('#petQuickLink').addEventListener('keydown', e => {
+        if (e.key === 'Enter') quickParseLink(container);
+      });
     }
   });
 }
@@ -83,11 +96,12 @@ function renderAccounts(container) {
     btn.onclick = () => openAccountModal(container, btn.dataset.acctEdit);
   });
   el.querySelectorAll('[data-acct-del]').forEach(btn => {
-    btn.onclick = () => {
-      const accounts = loadAccounts().filter(a => a.id !== btn.dataset.acctDel);
-      saveAccounts(accounts);
-      toast('已删除');
-      renderAccounts(container);
+    btn.onclick = async () => {
+      if (await confirmDialog({ title: '删除对标账号', message: '确定删除这个对标账号吗？', confirmText: '删除', danger: true })) {
+        saveAccounts(loadAccounts().filter(a => a.id !== btn.dataset.acctDel));
+        toast('已删除');
+        renderAccounts(container);
+      }
     };
   });
 }
@@ -119,119 +133,95 @@ function renderList(container) {
     btn.onclick = () => openAddModal(container, btn.dataset.inspEdit);
   });
   el.querySelectorAll('[data-insp-del]').forEach(btn => {
-    btn.onclick = () => {
-      const data = loadData().filter(d => d.id !== btn.dataset.inspDel);
-      saveData(data);
-      toast('已删除');
-      renderList(container);
+    btn.onclick = async () => {
+      if (await confirmDialog({ title: '删除灵感', message: '确定删除这条灵感吗？', confirmText: '删除', danger: true })) {
+        saveData(loadData().filter(d => d.id !== btn.dataset.inspDel));
+        toast('已删除');
+        renderList(container);
+        const countEl = container.querySelector('#inspCount');
+        if (countEl) countEl.textContent = loadData().length;
+      }
     };
   });
 }
 
-// —— 通过链接解析灵感 ——
-function openParseLinkModal(container) {
-  openModal({
-    title: '通过链接解析灵感',
-    body: `
-      <div class="field">
-        <label class="field-label">第一步：粘贴视频/文章链接</label>
-        <input class="input" id="parseLinkInput" placeholder="如：https://www.douyin.com/video/xxx">
-      </div>
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
-        <button class="btn btn-primary btn-sm" id="genPromptBtn">${Icons.copy} 生成解析Prompt</button>
-        <span style="font-size:11px;color:var(--text-muted)">复制后发给AI，AI会返回JSON</span>
-      </div>
-      <div class="prompt-box" id="promptPreview" style="display:none;margin-bottom:12px;font-size:12px"></div>
-
-      <div class="field">
-        <label class="field-label">第二步：粘贴AI返回的JSON结果</label>
-        <textarea class="textarea" id="parseResultInput" style="min-height:120px" placeholder='粘贴AI返回的JSON，如：{"title":"...","type":"...","content":"...","reference":"..."}'></textarea>
-      </div>
-      <div style="display:flex;gap:8px;margin-bottom:12px">
-        <button class="btn btn-primary btn-sm" id="parseAndFillBtn">解析并填入</button>
-      </div>
-      <div id="parsePreviewArea" style="display:none"></div>`,
-    foot: `<button class="btn" id="parseCancel">取消</button><button class="btn btn-primary" id="parseSave" disabled>保存到灵感库</button>`
-  });
-
-  let parsedData = null;
-
-  document.getElementById('parseCancel').onclick = closeModal;
-
-  // 生成 Prompt
-  document.getElementById('genPromptBtn').onclick = () => {
-    const link = document.getElementById('parseLinkInput').value.trim();
-    if (!link) { toast('请先粘贴链接'); return; }
-    const prompt = `请分析这个宠物视频/文章链接，提取以下信息并以JSON格式返回：
-链接：${link}
-
-请返回如下JSON格式（不要包含其他文字）：
-{
-  "title": "视频/文章标题",
-  "type": "视频灵感",
-  "content": "详细描述这个视频的内容、创意点、为什么火、可以学习的点",
-  "reference": "来源链接或账号名"
+// —— 链接一键解析：粘贴链接 → 自动抓取 → AI 总结 → 直接入库 ——
+function extractJsonObj(text) {
+  if (!text) return null;
+  const t = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  const start = t.indexOf('{');
+  const end = t.lastIndexOf('}');
+  if (start === -1 || end === -1 || end < start) return null;
+  try { return JSON.parse(t.slice(start, end + 1)); } catch (e) { return null; }
 }
 
-注意：type只能从以下选项中选择：视频灵感、爆款总结、脚本创意、账号定位、其他`;
+async function quickParseLink(container) {
+  const linkEl = container.querySelector('#petQuickLink');
+  const btn = container.querySelector('#petQuickBtn');
+  const statusEl = container.querySelector('#petQuickStatus');
+  const url = (linkEl.value || '').trim();
+  if (!url) { toast('请先粘贴链接'); return; }
+  if (!/^https?:\/\//i.test(url)) { toast('链接格式不对，需要以 http(s):// 开头'); return; }
+  if (loadData().some(d => d.reference === url)) { toast('这个链接已经收集过了'); return; }
 
-    document.getElementById('promptPreview').style.display = 'block';
-    document.getElementById('promptPreview').textContent = prompt;
-    copyText(prompt);
-  };
+  btn.disabled = true;
+  const setStatus = (s) => { if (statusEl) statusEl.textContent = s; };
 
-  // 解析 JSON 并填入预览
-  document.getElementById('parseAndFillBtn').onclick = () => {
-    const text = document.getElementById('parseResultInput').value.trim();
-    if (!text) { toast('请先粘贴AI返回的结果'); return; }
-    try {
-      let jsonStr = text;
-      const m = text.match(/\{[\s\S]*\}/);
-      if (m) jsonStr = m[0];
-      const data = JSON.parse(jsonStr);
-
-      // 兼容多种格式
-      const item = Array.isArray(data) ? data[0] : data;
-      if (!item.title) { toast('未找到标题字段，请检查JSON格式'); return; }
-
-      parsedData = {
-        title: item.title || '',
-        type: item.type || '视频灵感',
-        content: item.content || item.description || '',
-        reference: item.reference || item.link || document.getElementById('parseLinkInput').value.trim(),
-      };
-
-      // 显示预览
-      const previewEl = document.getElementById('parsePreviewArea');
-      previewEl.style.display = 'block';
-      previewEl.innerHTML = `
-        <div class="card" style="background:var(--primary-bg);border:0.5px solid var(--primary-light)">
-          <div style="font-size:13px;font-weight:600;color:var(--primary);margin-bottom:8px">解析结果预览</div>
-          <div style="font-size:13px;margin-bottom:4px"><strong>标题：</strong>${escapeHtml(parsedData.title)}</div>
-          <div style="font-size:13px;margin-bottom:4px"><strong>类型：</strong>${escapeHtml(parsedData.type)}</div>
-          <div style="font-size:13px;margin-bottom:4px"><strong>内容：</strong>${escapeHtml(parsedData.content.slice(0, 100))}${parsedData.content.length > 100 ? '...' : ''}</div>
-          <div style="font-size:13px"><strong>来源：</strong>${escapeHtml(parsedData.reference)}</div>
-        </div>`;
-      document.getElementById('parseSave').disabled = false;
-      toast('解析成功，请确认后保存');
-    } catch (err) {
-      toast('解析失败，请检查JSON格式是否正确');
+  try {
+    // ① 抓取页面内容（多通道兜底）
+    const fetched = await fetchArticle(url, setStatus);
+    if (!fetched || !fetched.text) {
+      setStatus('');
+      btn.disabled = false;
+      toast('自动抓取失败（抖音/小红书等App内页面通常抓不到），已打开表单请手动填写');
+      openAddModal(container, null, { reference: url });
+      return;
     }
-  };
 
-  // 保存
-  document.getElementById('parseSave').onclick = () => {
-    if (!parsedData) { toast('请先解析'); return; }
+    // ② AI 总结（没配 AI 就存原始内容）
+    let parsed = null;
+    if (hasAiConfig()) {
+      setStatus('✅ 抓取成功，AI 正在总结…');
+      try {
+        const full = await aiChatStream([
+          { role: 'system', content: '你是宠物短视频/内容运营分析师。只输出 JSON，不要任何其他文字。' },
+          { role: 'user', content: `分析下面这个宠物相关内容，输出 JSON（都是字符串）：
+{"title":"内容标题（简洁概括）","type":"从这些里选一个：视频灵感、爆款总结、脚本创意、账号定位、其他","content":"这个内容讲了什么、创意点在哪、为什么可能火、可以借鉴的点（150字内）"}
+
+页面标题：${fetched.title || '（未知）'}
+页面内容：
+${fetched.text.slice(0, 5000)}` },
+        ], { temperature: 0.4 });
+        parsed = extractJsonObj(full);
+      } catch (e) { /* 兜底 */ }
+    }
+
+    const item = {
+      id: Storage.uid(),
+      title: (parsed?.title || fetched.title || '未命名灵感').slice(0, 80),
+      type: parsed?.type || '视频灵感',
+      content: parsed?.content || fetched.text.slice(0, 300),
+      reference: url,
+      createdAt: Date.now(),
+    };
     const data = loadData();
-    data.unshift({ id: Storage.uid(), ...parsedData, createdAt: Date.now() });
+    data.unshift(item);
     saveData(data);
-    closeModal();
-    toast('已保存到灵感库');
+    setStatus('');
+    linkEl.value = '';
+    btn.disabled = false;
+    toast(parsed ? '已解析并添加到灵感库 ✅' : '已抓取添加（未配置 AI，内容为原文摘录）');
     renderList(container);
-  };
+    const countEl = container.querySelector('#inspCount');
+    if (countEl) countEl.textContent = loadData().length;
+  } catch (e) {
+    setStatus('');
+    btn.disabled = false;
+    toast('解析失败：' + (e.message || '未知错误'));
+  }
 }
 
-function openAddModal(container, editId) {
+function openAddModal(container, editId, preset = {}) {
   const editing = editId ? loadData().find(d => d.id === editId) : null;
   openModal({
     title: editing ? '编辑灵感' : '添加灵感',
@@ -254,7 +244,7 @@ function openAddModal(container, editId) {
       </div>
       <div class="field">
         <label class="field-label">参考来源（选填）</label>
-        <input class="input" id="inspRef" value="${editing ? escapeHtml(editing.reference || '') : ''}" placeholder="视频链接或账号名">
+        <input class="input" id="inspRef" value="${editing ? escapeHtml(editing.reference || '') : escapeHtml(preset.reference || '')}" placeholder="视频链接或账号名">
       </div>`,
     foot: `<button class="btn" id="inspCancel">取消</button><button class="btn btn-primary" id="inspSave">保存</button>`
   });
@@ -281,6 +271,8 @@ function openAddModal(container, editId) {
     closeModal();
     toast('已保存');
     renderList(container);
+    const countEl = container.querySelector('#inspCount');
+    if (countEl) countEl.textContent = loadData().length;
   };
 }
 

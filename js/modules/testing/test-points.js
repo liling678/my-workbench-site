@@ -1,7 +1,7 @@
 // 测试点生成器 — 需求 → 测试点 → 用例
 import { registerModule, Icons } from '../../registry.js';
 import { Storage } from '../../storage.js';
-import { openModal, closeModal, toast, copyText, escapeHtml } from '../../ui.js';
+import { openModal, closeModal, confirmDialog, toast, copyText, escapeHtml } from '../../ui.js';
 
 const KEY = 'testpoints';
 const CATEGORIES = [
@@ -306,7 +306,8 @@ function renderList(container) {
   listEl.querySelectorAll('.tp-card').forEach(card => {
     const id = card.dataset.id;
     card.querySelector('.tp-edit').onclick = () => openEditModal(container, id);
-    card.querySelector('.tp-del').onclick = () => {
+    card.querySelector('.tp-del').onclick = async () => {
+      if (!await confirmDialog({ title: '删除', message: '确定删除这个测试点吗？', confirmText: '删除', danger: true })) return;
       const d = loadData();
       d.items = d.items.filter(x => x.id !== id);
       saveData(d);

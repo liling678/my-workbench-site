@@ -6,21 +6,21 @@ import { openSyncSettings, loadCloudConfig } from '../../cloud-sync.js';
 
 // 好句库：每条带来源（书名 + 作者）
 const QUOTES = [
-  { text: '种一棵树最好的时间是十年前，其次是现在。', source: '《说苑》', author: '刘向' },
-  { text: '每一个不曾起舞的日子，都是对生命的辜负。', source: '《查拉图斯特拉如是说》', author: '尼采' },
-  { text: '你现在的努力，是为了以后的从容。', source: '《人生海海》', author: '麦家' },
-  { text: '慢慢来，比较快。', source: '《人间值得》', author: '中村恒子' },
-  { text: '不积跬步，无以至千里。', source: '《荀子·劝学》', author: '荀子' },
-  { text: '行动是治愈焦虑的良药。', source: '《被讨厌的勇气》', author: '岸见一郎' },
-  { text: '把简单的事情做到极致，就是不简单。', source: '《匠人精神》', author: '秋山利辉' },
-  { text: '星光不问赶路人，时光不负有心人。', source: '《一个人的朝圣》', author: '蕾秋·乔伊斯' },
-  { text: '所有的闪闪发光，都是在暗处默默打磨的结果。', source: '《活着》', author: '余华' },
-  { text: '与其等待机会，不如创造机会。', source: '《穷查理宝典》', author: '查理·芒格' },
-  { text: '你只管努力，剩下的交给时间。', source: '《平凡的世界》', author: '路遥' },
-  { text: '保持热爱，奔赴山海。', source: '《山月记》', author: '中岛敦' },
-  { text: '路虽远，行则将至；事虽难，做则必成。', source: '《荀子·修身》', author: '荀子' },
-  { text: '自律给我自由。', source: '《少有人走的路》', author: '斯科特·派克' },
-  { text: '生活不可能像你想象得那么好，但也不会像你想象得那么糟。', source: '《人生》', author: '路遥' },
+  { text: '种一棵树最好的时间是十年前，其次是现在。', source: '《说苑》', author: '刘向', en: 'The best time to plant a tree was ten years ago; the second best time is now.' },
+  { text: '每一个不曾起舞的日子，都是对生命的辜负。', source: '《查拉图斯特拉如是说》', author: '尼采', en: 'Every day that we do not dance is a day we betray life.' },
+  { text: '你现在的努力，是为了以后的从容。', source: '《人生海海》', author: '麦家', en: 'The effort you make today is for the ease you will enjoy tomorrow.' },
+  { text: '慢慢来，比较快。', source: '《人间值得》', author: '中村恒子', en: 'Slow down — going gently is the faster way.' },
+  { text: '不积跬步，无以至千里。', source: '《荀子·劝学》', author: '荀子', en: 'A journey of a thousand miles begins with a single step.' },
+  { text: '行动是治愈焦虑的良药。', source: '《被讨厌的勇气》', author: '岸见一郎', en: 'Action is the best medicine for anxiety.' },
+  { text: '把简单的事情做到极致，就是不简单。', source: '《匠人精神》', author: '秋山利辉', en: 'To do simple things to perfection is itself extraordinary.' },
+  { text: '星光不问赶路人，时光不负有心人。', source: '《一个人的朝圣》', author: '蕾秋·乔伊斯', en: 'The stars do not ask the traveler where he goes, yet time rewards the devoted heart.' },
+  { text: '所有的闪闪发光，都是在暗处默默打磨的结果。', source: '《活着》', author: '余华', en: 'Every sparkle you see was once quietly polished in the dark.' },
+  { text: '与其等待机会，不如创造机会。', source: '《穷查理宝典》', author: '查理·芒格', en: 'Rather than wait for opportunity, create it.' },
+  { text: '你只管努力，剩下的交给时间。', source: '《平凡的世界》', author: '路遥', en: 'Just do your best, and leave the rest to time.' },
+  { text: '保持热爱，奔赴山海。', source: '《山月记》', author: '中岛敦', en: 'Hold on to what you love, and journey to the mountains and seas.' },
+  { text: '路虽远，行则将至；事虽难，做则必成。', source: '《荀子·修身》', author: '荀子', en: 'Though the road is long, walking brings you there; though the task is hard, doing makes it done.' },
+  { text: '自律给我自由。', source: '《少有人走的路》', author: '斯科特·派克', en: 'Self-discipline is what sets me free.' },
+  { text: '生活不可能像你想象得那么好，但也不会像你想象得那么糟。', source: '《人生》', author: '路遥', en: 'Life is never as good as you hope, nor as bad as you fear.' },
 ];
 
 const CHECKIN_ITEMS = [
@@ -43,7 +43,7 @@ let activeTaskTab = 'daily';
 function getDailyQuote() {
   const cached = Storage.get(QUOTE_KEY, null);
   const tk = todayKey();
-  if (cached && cached.date === tk) {
+  if (cached && cached.date === tk && cached.quote && cached.quote.en) {
     return cached.quote;
   }
   const soulQuotes = Storage.get('soul_massage_quotes', []);
@@ -360,6 +360,7 @@ export function initDashboard(container) {
       </div>
       <div class="greeting-quote" id="quoteBox">
         <div class="greeting-quote-text">\u201C${escapeHtml(quote.text)}\u201D</div>
+        ${quote.en ? `<div class="greeting-quote-en">${escapeHtml(quote.en)}</div>` : ''}
         <div class="greeting-quote-source">\u2014\u2014 ${escapeHtml(quote.source)}${quote.author ? ' \u00B7 ' + escapeHtml(quote.author) : ''}</div>
       </div>
     </div>
@@ -515,6 +516,7 @@ export function initDashboard(container) {
   // 任务删除
   container.querySelectorAll('[data-task-del]').forEach(el => {
     el.onclick = async () => {
+      if (!await confirmDialog({ title: '删除任务', message: '确定删除这个任务吗？', confirmText: '删除', danger: true })) return;
       const id = el.dataset.taskDel;
       let tasks = getTasks();
       const t = tasks.find(x => x.id === id);

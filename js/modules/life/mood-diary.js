@@ -193,7 +193,8 @@ function renderMoodList(container) {
   }).join('');
 
   el.querySelectorAll('[data-mood-del]').forEach(btn => {
-    btn.onclick = () => {
+    btn.onclick = async () => {
+      if (!await confirmDialog({ title: '删除', message: '确定删除这篇心情日记吗？', confirmText: '删除', danger: true })) return;
       const data = loadData().filter(r => r.id !== btn.dataset.moodDel);
       saveData(data);
       toast('已删除');

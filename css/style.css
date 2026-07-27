@@ -283,6 +283,10 @@ input, textarea, select { font-family: inherit; }
   font-size: 11px; color: rgba(255,255,255,0.6);
   margin-top: 8px; text-align: right;
 }
+.greeting-quote-en {
+  font-size: 12px; color: rgba(255,255,255,0.82); line-height: 1.6;
+  margin-top: 6px; font-style: italic; letter-spacing: 0.2px;
+}
 
 /* ===== Stats grid ===== */
 .stats-grid {
@@ -1322,3 +1326,11 @@ input, textarea, select { font-family: inherit; }
 .tt-adapt-title { font-size: 13px; font-weight: 600; color: var(--text-title); line-height: 1.5; }
 .tt-adapt-angle { font-size: 12px; color: var(--text-muted); margin: 6px 0 10px; line-height: 1.5; }
 
+
+/* 弹窗防误关提示抖动 */
+@keyframes wbModalShake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-6px); }
+  50% { transform: translateX(6px); }
+  75% { transform: translateX(-3px); }
+}

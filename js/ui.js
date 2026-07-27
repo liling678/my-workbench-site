@@ -19,7 +19,19 @@ export function openModal({ title, body, foot, size }) {
     </div>`;
   modalRoot.classList.add('show');
   document.getElementById('modalCloseBtn').onclick = closeModal;
-  modalRoot.onclick = (e) => { if (e.target === modalRoot) closeModal(); };
+  // 防误关：点击遮罩空白处不再直接关闭弹窗（避免表单填一半误触丢失），
+  // 只轻微晃动弹窗提示用户用「取消」或右上角 ✕ 关闭
+  modalRoot.onclick = (e) => {
+    if (e.target === modalRoot) {
+      const m = modalRoot.querySelector('.modal');
+      if (m) {
+        m.style.animation = 'none';
+        // 触发 reflow 后重新加抖动动画
+        void m.offsetWidth;
+        m.style.animation = 'wbModalShake .3s';
+      }
+    }
+  };
   return modalRoot.querySelector('.modal');
 }
 

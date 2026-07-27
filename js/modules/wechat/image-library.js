@@ -4,6 +4,8 @@ import { openModal, closeModal, confirmDialog, toast, escapeHtml } from '../../u
 import { Icons } from '../../registry.js';
 
 const LIB_KEY = 'wechat_image_library';
+// 自动补录只执行一次；用户清空图片库后也不再自动补录（否则清空会被"补齐"回来）
+const BACKFILL_FLAG = 'wechat_imagelib_backfilled';
 
 function loadImages() {
   return Storage.get(LIB_KEY, []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -42,8 +44,12 @@ function backfillFromDrafts() {
 }
 
 export function renderImageLibrary(container) {
-  const added = backfillFromDrafts();
-  if (added > 0) toast(`已从文章库自动补录 ${added} 张图片`);
+  // 只在从未补录过时自动补录一次（清空后置为 done，不会再自动补回）
+  if (!Storage.get(BACKFILL_FLAG, false)) {
+    const added = backfillFromDrafts();
+    Storage.set(BACKFILL_FLAG, true);
+    if (added > 0) toast(`已从文章库自动补录 ${added} 张图片`);
+  }
   const images = loadImages();
 
   container.innerHTML = `
@@ -66,10 +72,11 @@ export function renderImageLibrary(container) {
     <div class="card card-pad mb-16">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <input class="input" id="img_search" placeholder="🔍 按 prompt 描述搜索…" style="flex:1;min-width:160px">
+        <button class="btn btn-sm" id="img_backfill">↩️ 从文章库补录</button>
         <button class="btn" id="img_clear">${Icons.trash} 清空图片库</button>
       </div>
       <div style="font-size:12px;color:var(--text-muted);margin-top:8px">
-        💡 图片库最多保留 60 张（超出自动删旧的，防止撑爆浏览器存储）。点图片可看大图、复制、下载、删除。
+        💡 图片库最多保留 60 张（超出自动删旧的，防止撑爆浏览器存储）。点图片可看大图、复制、下载、删除。清空后不会自动补回，需要历史图时点「从文章库补录」。
       </div>
     </div>
 
@@ -108,12 +115,20 @@ export function renderImageLibrary(container) {
 
   search.oninput = () => paint(search.value);
   clearBtn.onclick = async () => {
-    if (images.length === 0) { toast('图片库已为空'); return; }
-    if (await confirmDialog({ title: '清空图片库', message: `确定删除全部 ${images.length} 张图片吗？此操作不可恢复。`, confirmText: '清空', danger: true })) {
+    const cur = loadImages();
+    if (cur.length === 0) { toast('图片库已为空'); return; }
+    if (await confirmDialog({ title: '清空图片库', message: `确定删除全部 ${cur.length} 张图片吗？此操作不可恢复。`, confirmText: '清空', danger: true })) {
       Storage.set(LIB_KEY, []);
+      Storage.set(BACKFILL_FLAG, true); // 清空后禁止自动补录
       toast('已清空');
       renderImageLibrary(container);
     }
+  };
+  container.querySelector('#img_backfill').onclick = () => {
+    const added = backfillFromDrafts();
+    Storage.set(BACKFILL_FLAG, true);
+    toast(added > 0 ? `已补录 ${added} 张图片` : '文章库里没有新图片可补录');
+    if (added > 0) renderImageLibrary(container);
   };
 }
 
