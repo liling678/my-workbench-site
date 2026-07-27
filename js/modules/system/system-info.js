@@ -168,19 +168,34 @@ export function initSystemInfo() {
         const btn = container.querySelector('#checkUpdateBtn');
         btn.disabled = true; btn.textContent = '检查中…';
         try {
-          if ('serviceWorker' in navigator) {
-            const reg = await navigator.serviceWorker.getRegistration();
-            if (reg) {
-              await reg.update();
-              toast('已检查更新，2 秒后自动刷新页面');
-              setTimeout(() => location.reload(true), 2000);
-              return;
-            }
+          if (!('serviceWorker' in navigator)) {
+            toast('当前环境不支持离线更新，已强制刷新');
+            setTimeout(() => location.reload(), 600);
+            return;
           }
-          toast('未检测到离线服务，直接强制刷新');
-          setTimeout(() => location.reload(true), 800);
+          const reg = await navigator.serviceWorker.getRegistration();
+          if (!reg) {
+            toast('未检测到离线服务，已强制刷新');
+            setTimeout(() => location.reload(), 600);
+            return;
+          }
+          // 强制向网络拉取最新 sw.js（来自 github.io），连不上会抛错
+          await reg.update();
+          if (reg.waiting || reg.installing) {
+            toast('发现新版本，即将刷新页面');
+            setTimeout(() => location.reload(), 1200);
+          } else {
+            toast('已是最新版本（' + APP_VERSION + '），无需更新');
+            btn.disabled = false; btn.textContent = '🔄 检查更新';
+          }
         } catch (e) {
-          toast('检查更新失败：' + (e.message || '网络异常'));
+          const msg = (e && (e.message || e.name)) || '未知错误';
+          const net = /network|failed|fetch|update|abort|timeout|load/i.test(msg);
+          if (net) {
+            toast('无法连接 GitHub Pages：手机端常因无 VPN 或被运营商拦截 github.io 导致。可开 VPN/换网络后重试；其实完全关闭并重开 App 也会自动更新');
+          } else {
+            toast('检查更新出错：' + String(msg).slice(0, 50));
+          }
           btn.disabled = false; btn.textContent = '🔄 检查更新';
         }
       };
