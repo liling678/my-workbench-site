@@ -12,9 +12,10 @@ const INSPO_KEY = 'wechat_inspiration_articles';
 const IMAGE_LIB_KEY = 'wechat_image_library';
 
 // 自动把生成的图片入库到图片库（按 prompt 文本去重）
+// base64 图片体积大，localStorage 容量有限：写入失败时自动删最旧的图重试，确保新图一定能入库
 function addToImageLibrary(image, prompt, position, sourceTitle) {
   if (!image) return;
-  const lib = Storage.get(IMAGE_LIB_KEY, []);
+  let lib = Storage.get(IMAGE_LIB_KEY, []);
   // 去重：相同 prompt 不重复入
   if (lib.some(x => x.prompt === prompt && x.image === image)) return;
   lib.unshift({
@@ -25,9 +26,19 @@ function addToImageLibrary(image, prompt, position, sourceTitle) {
     sourceTitle: sourceTitle || '',
     createdAt: Date.now(),
   });
-  // 限 200 张，超出的删旧的（防止 base64 撑爆 localStorage）
-  if (lib.length > 200) lib.length = 200;
-  Storage.set(IMAGE_LIB_KEY, lib);
+  // 上限 60 张（base64 图较大，防撑爆 localStorage 配额）
+  if (lib.length > 60) lib.length = 60;
+  // 写入失败（容量超限）→ 逐步删最旧的重试
+  let ok = Storage.set(IMAGE_LIB_KEY, lib);
+  let guard = 0;
+  while (!ok && lib.length > 1 && guard < 20) {
+    lib = lib.slice(0, Math.max(1, Math.floor(lib.length * 0.7)));
+    ok = Storage.set(IMAGE_LIB_KEY, lib);
+    guard++;
+  }
+  if (!ok) {
+    toast('⚠️ 存储空间不足，图片未能入库（可去图片库清理旧图）');
+  }
 }
 
 function loadTopics() { return Storage.get(TOPIC_KEY, []); }
@@ -292,6 +303,13 @@ const STRUCTURE_INSPIRATIONS = [
 
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
+// 出图守护词：追加在每个绘画 prompt 末尾，规避 AI 绘画常见崩坏（手指、五官、屏幕设备、文字）
+const IMG_GUARD = '。画面要求：不出现人物手部和清晰人脸（如有人物仅背影或剪影），不出现手机电脑等电子屏幕，不出现任何文字字母，构图自然、物体结构正确、高质量摄影感';
+function guardPrompt(p) {
+  if (!p) return p;
+  return p.includes('不出现人物手部') ? p : p + IMG_GUARD;
+}
+
 // ===== 公众号"树予我说"常驻风格规则（整合自风格画像·爆款公式）=====
 // 这些是账号反复验证有效的写作规范，但应用时要"神似不机械"——
 function buildShuyuRules(author) {
@@ -326,7 +344,7 @@ function buildShuyuRules(author) {
 # 二、文章结构要求
 
 【标题】
-先提供 10 个候选标题，再写作。标题要求：
+在内部构思多个候选后，只输出最终选定的那一个标题。标题要求：
 - 有情绪冲击力，能引发点击
 - 有读者痛点但不夸张标题党
 - 推荐模板：《XXX》告诉我 / 读完《XXX》，我终于明白 / 那个曾经XXX的自己，终于被我原谅了 / 成年后才发现 / 人生最大的遗憾是 / 30岁以后，我终于接受了
@@ -508,13 +526,12 @@ function renderStep2(el, container) {
         <label class="field-label">封面 / 配图建议</label>
         <textarea class="textarea" id="article_imgideas" style="min-height:90px;line-height:1.7" placeholder="AI 生成后会自动填入：封面画面建议 + 各章节配图建议，也可手动修改">${escapeHtml(savedImgIdeas)}</textarea>
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-primary" id="saveDraftBtn">${Icons.edit} 保存草稿</button>
-        <button class="btn btn-accent" id="saveLibBtn">💾 保存至文章库</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn btn-primary" id="saveLibBtn">💾 保存至文章库</button>
         <button class="btn" id="copyArticleBtn">${Icons.copy} 复制全文</button>
-        <div class="spacer" style="flex:1"></div>
-        <button class="btn btn-sm" id="clearArticleBtn">清空内容</button>
+        <button class="btn" id="clearArticleBtn" style="margin-left:auto;color:var(--red)">清空内容</button>
       </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:6px">内容会自动实时保存，无需手动存草稿</div>
     </div>
 
     <div style="display:flex;gap:8px">
@@ -588,6 +605,26 @@ function renderStep2(el, container) {
     return { title: title || '', content, summary, imgIdeas };
   };
 
+  // 兜底：如果模型没按格式输出摘要块，单独补一次轻量 AI 请求生成摘要与配图建议
+  const ensureAux = async (title, content) => {
+    if (!content || !hasAiConfig()) return;
+    try {
+      const txt = await aiChatStream([
+        { role: 'system', content: '你是公众号运营助手。严格按用户要求的格式输出，不要任何多余文字。' },
+        { role: 'user', content: `阅读下面这篇公众号文章，输出运营辅助信息，严格按以下格式（保留【】标记）：\n【一句话摘要】不超过50字\n【朋友圈文案】不超过100字\n【封面画面建议】中文一句话画面描述\n【配图建议】各章节配图中文建议\n\n标题：${title}\n\n正文：\n${content.slice(0, 2500)}` },
+      ], { temperature: 0.7 });
+      const labels = ['一句话摘要', '朋友圈文案', '封面画面建议', '配图建议'];
+      const re = new RegExp('【(' + labels.join('|') + ')】\\s*([\\s\\S]*?)(?=【(?:' + labels.join('|') + ')】|$)', 'g');
+      const map = {};
+      let mm;
+      while ((mm = re.exec(txt)) !== null) { map[mm[1]] = mm[2].trim(); }
+      const summary = [map['一句话摘要'], map['朋友圈文案']].filter(Boolean).join('\n');
+      const imgIdeas = [map['封面画面建议'], map['配图建议']].filter(Boolean).join('\n');
+      if (summary) { summaryEl.value = summary; Storage.set('wechat_current_summary', summary); }
+      if (imgIdeas) { imgIdeasEl.value = imgIdeas; Storage.set('wechat_current_imgideas', imgIdeas); }
+    } catch (e) { /* 兜底失败不打扰用户 */ }
+  };
+
   // 核心生成函数
   const runGenerate = async (messages, { replaceAll = true } = {}) => {
     if (!hasAiConfig()) { openAiConfigModal(() => renderStep2(el, container)); return; }
@@ -622,6 +659,11 @@ function renderStep2(el, container) {
         Storage.set('wechat_current_article', content);
         Storage.set('wechat_current_summary', summary);
         Storage.set('wechat_current_imgideas', imgIdeas);
+        // 模型没输出摘要块时，自动补一次生成（不阻塞主流程提示）
+        if (!summary && !imgIdeas && content) {
+          toast('正在补充生成摘要与配图建议…');
+          ensureAux(title, content); // 异步进行，完成后自动填入
+        }
       } else {
         titleInput.value = titleInput.value;
         contentInput.value = full;
@@ -716,14 +758,6 @@ function renderStep2(el, container) {
       { role: 'system', content: buildSystemPrompt(profile) },
       { role: 'user', content: `下面是我的公众号文章草稿：\n\n${titleInput.value ? '标题：' + titleInput.value + '\n\n' : ''}${current}\n\n请按这个要求修改：${instruction}\n\n要求：保持整体风格不变，只输出修改后的正文全文（不要输出标题行，不要任何解释说明）。` },
     ], { replaceAll: false });
-  };
-
-  el.querySelector('#saveDraftBtn').onclick = () => {
-    Storage.set('wechat_current_title', titleInput.value);
-    Storage.set('wechat_current_article', contentInput.value);
-    Storage.set('wechat_current_summary', summaryEl.value);
-    Storage.set('wechat_current_imgideas', imgIdeasEl.value);
-    toast('草稿已保存');
   };
 
   // 保存至文章库（不清除当前编辑状态，可反复保存）
@@ -909,7 +943,7 @@ function renderStep3(el, container) {
       // 1) 文本模型规划配图方案（JSON）
       const planPrompt = [
         { role: 'system', content: '你是资深公众号视觉编辑，擅长为女性成长/读书类温柔治愈风格的文章配图。只输出 JSON，不要任何多余文字。' },
-        { role: 'user', content: `请阅读下面这篇公众号文章，为它规划 3~4 张配图（第一张必须是封面）。\n\n标题：${title}\n\n正文：\n${article.slice(0, 2000)}\n\n要求以 JSON 数组输出，每个元素形如：\n{"position":"封面/第一段后/第二段后/结尾","description":"一句话中文说明这张图的作用和画面","prompt":"用于AI绘画的详细画面描述，中文，具体到场景、主体、光线、色调、构图、氛围，整体为温柔治愈的女性成长读书号风格（暖色调、柔和光线、清新文艺、留白、莫兰迪色系），画面中不要出现任何文字"}\n\n只输出 JSON 数组本身。` },
+        { role: 'user', content: `请阅读下面这篇公众号文章，为它规划 3~4 张配图（第一张必须是封面）。\n\n标题：${title}\n\n正文：\n${article.slice(0, 2000)}\n\n要求以 JSON 数组输出，每个元素形如：\n{"position":"封面/第一段后/第二段后/结尾","description":"一句话中文说明这张图的作用和画面","prompt":"用于AI绘画的详细画面描述，中文，具体到场景、主体、光线、色调、构图、氛围，整体为温柔治愈的女性成长读书号风格（暖色调、柔和光线、清新文艺、留白、莫兰迪色系）"}\n\nprompt 的硬性规则（AI绘画容易画崩，必须遵守）：\n1. 严禁出现人物的手部（拿书、端杯、托腮等任何手部动作都不行）\n2. 严禁出现清晰的人脸/五官；如需人物，只能是远景背影、剪影或虚化轮廓\n3. 优先选择：静物（书本、茶杯、台灯、信纸）、窗边光影、自然风景、植物花草、空椅子、街角等无人场景\n4. 严禁出现手机、电脑等带屏幕的电子设备（屏幕朝向容易画错）\n5. 画面中不要出现任何文字、字母、数字\n\n只输出 JSON 数组本身。` },
       ];
       const planText = await aiChatStream(planPrompt, { temperature: 0.8, signal: coverAbort.signal });
       let plans;
@@ -948,7 +982,7 @@ function renderStep3(el, container) {
         if (coverAbort.signal.aborted) break;
         setCoverGenerating(true, `正在生成第 ${i + 1}/${covers.length} 张配图…`);
         try {
-          const r = await aiGenerateImageClean(covers[i].prompt, { size: '1024x1024', signal: coverAbort.signal });
+          const r = await aiGenerateImageClean(guardPrompt(covers[i].prompt), { size: '1024x1024', signal: coverAbort.signal });
           covers[i].image = await storeImage(r.image);
           covers[i].raw = !r.cleaned; // raw=true 表示未能裁掉水印，展示时用 CSS 裁剪兜底
           addToImageLibrary(covers[i].image, covers[i].prompt, covers[i].position, title);
@@ -988,7 +1022,7 @@ function renderStep3(el, container) {
       Storage.set('wechat_current_covers', c);
       rerender();
       try {
-        const r = await aiGenerateImageClean(prompt, { size: '1024x1024' });
+        const r = await aiGenerateImageClean(guardPrompt(prompt), { size: '1024x1024' });
         const cur = Storage.get('wechat_current_covers', []);
         cur[idx].image = await storeImage(r.image); cur[idx].raw = !r.cleaned; cur[idx].loading = false;
         Storage.set('wechat_current_covers', cur);

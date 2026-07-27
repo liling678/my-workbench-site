@@ -9,7 +9,41 @@ function loadImages() {
   return Storage.get(LIB_KEY, []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 }
 
+// 回填：把文章库(drafts)和当前配图里已有、但没进图片库的图片补进来
+// （修复历史版本图片未自动入库的问题；容量超限时自动删旧图腾位）
+function backfillFromDrafts() {
+  let lib = Storage.get(LIB_KEY, []);
+  const known = new Set(lib.map(x => x.image));
+  const candidates = [];
+  const drafts = Storage.get('wechat_drafts', []);
+  drafts.forEach(d => (d.covers || []).forEach(c => {
+    if (c.image && !known.has(c.image)) {
+      candidates.push({ image: c.image, prompt: c.prompt || c.description || '', position: c.position || '', sourceTitle: d.title || '', createdAt: d.createdAt || Date.now() });
+      known.add(c.image);
+    }
+  }));
+  (Storage.get('wechat_current_covers', []) || []).forEach(c => {
+    if (c.image && !known.has(c.image)) {
+      candidates.push({ image: c.image, prompt: c.prompt || c.description || '', position: c.position || '', sourceTitle: '(当前编辑中)', createdAt: Date.now() });
+      known.add(c.image);
+    }
+  });
+  if (candidates.length === 0) return 0;
+  candidates.forEach(c => lib.unshift({ id: Storage.uid(), ...c }));
+  if (lib.length > 60) lib.length = 60;
+  let ok = Storage.set(LIB_KEY, lib);
+  let guard = 0;
+  while (!ok && lib.length > 1 && guard < 20) {
+    lib = lib.slice(0, Math.max(1, Math.floor(lib.length * 0.7)));
+    ok = Storage.set(LIB_KEY, lib);
+    guard++;
+  }
+  return ok ? candidates.length : 0;
+}
+
 export function renderImageLibrary(container) {
+  const added = backfillFromDrafts();
+  if (added > 0) toast(`已从文章库自动补录 ${added} 张图片`);
   const images = loadImages();
 
   container.innerHTML = `
@@ -35,7 +69,7 @@ export function renderImageLibrary(container) {
         <button class="btn" id="img_clear">${Icons.trash} 清空图片库</button>
       </div>
       <div style="font-size:12px;color:var(--text-muted);margin-top:8px">
-        💡 图片库最多保留 200 张（超出自动删旧的）。点图片可看大图、复制、删除。
+        💡 图片库最多保留 60 张（超出自动删旧的，防止撑爆浏览器存储）。点图片可看大图、复制、下载、删除。
       </div>
     </div>
 

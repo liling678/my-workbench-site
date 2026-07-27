@@ -2,6 +2,7 @@
 import { Storage } from '../../storage.js';
 import { openModal, closeModal, confirmDialog, toast, escapeHtml } from '../../ui.js';
 import { Icons } from '../../registry.js';
+import { stripWatermark } from '../../ai-service.js';
 
 const LIB_KEY = 'wechat_drafts';
 
@@ -112,9 +113,10 @@ function openViewModal(a) {
     size: 'lg',
     body: `
       ${covers.length ? `
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-bottom:14px">
-          ${covers.map(c => `<img src="${escapeAttr(c.image)}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px">`).join('')}
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-bottom:6px">
+          ${covers.map((c, i) => `<img src="${escapeAttr(c.image)}" class="lib-cover-img" data-ci="${i}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;cursor:zoom-in">`).join('')}
         </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:14px">点图片可放大查看 / 保存（放大时自动去除AI水印）</div>
       ` : ''}
       ${a.summary ? `<div style="background:rgba(15,110,86,0.06);border-left:3px solid var(--primary);padding:10px 12px;border-radius:6px;font-size:13px;line-height:1.7;margin-bottom:14px;white-space:pre-wrap">${escapeHtml(a.summary)}</div>` : ''}
       <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">${new Date(a.createdAt).toLocaleString()} · ${(a.content || '').length} 字</div>
@@ -126,6 +128,74 @@ function openViewModal(a) {
   document.getElementById('lib_close_modal').onclick = closeModal;
   document.getElementById('lib_copy_modal').onclick = () => {
     navigator.clipboard.writeText(a.content || '').then(() => toast('已复制全文'));
+  };
+  // 点击图片 → 灯箱放大（叠加在弹窗之上，不关闭弹窗）
+  document.querySelectorAll('.lib-cover-img').forEach(imgEl => {
+    imgEl.onclick = () => openLightbox(a, parseInt(imgEl.dataset.ci), imgEl);
+  });
+}
+
+// ===== 图片灯箱：放大查看 + 自动去水印 + 保存 =====
+function openLightbox(article, coverIdx, thumbEl) {
+  const covers = (article.covers || []).filter(c => c.image);
+  const cover = covers[coverIdx];
+  if (!cover) return;
+
+  const box = document.createElement('div');
+  box.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;cursor:zoom-out';
+  box.innerHTML = `
+    <img id="lb_img" src="${escapeAttr(cover.image)}" style="max-width:94vw;max-height:78vh;object-fit:contain;border-radius:8px;cursor:default;box-shadow:0 8px 40px rgba(0,0,0,.5)">
+    <div id="lb_status" style="color:rgba(255,255,255,.7);font-size:12px;margin-top:10px;min-height:18px"></div>
+    <div style="display:flex;gap:10px;margin-top:8px">
+      <button class="btn" id="lb_save" style="background:#fff;cursor:pointer">${Icons.download} 保存图片</button>
+      <button class="btn" id="lb_close" style="background:rgba(255,255,255,.15);color:#fff;border-color:transparent;cursor:pointer">关闭</button>
+    </div>
+  `;
+  document.body.appendChild(box);
+  const imgEl = box.querySelector('#lb_img');
+  const statusEl = box.querySelector('#lb_status');
+  const destroy = () => box.remove();
+  box.onclick = (e) => { if (e.target === box) destroy(); };
+  box.querySelector('#lb_close').onclick = destroy;
+
+  // 有水印的图（raw 或远程链接）→ 自动尝试去水印，成功后回存到文章库
+  let currentSrc = cover.image;
+  const needClean = cover.raw || /^https?:/.test(cover.image);
+  if (needClean) {
+    statusEl.textContent = '正在去除AI水印…';
+    stripWatermark(cover.image).then(clean => {
+      currentSrc = clean;
+      imgEl.src = clean;
+      if (thumbEl) thumbEl.src = clean;
+      statusEl.textContent = '✅ 已去除水印';
+      // 回存干净版到文章库（找到原 draft 中对应的 cover）
+      const drafts = Storage.get(LIB_KEY, []);
+      const d = drafts.find(x => x.id === article.id);
+      if (d) {
+        const target = (d.covers || []).find(c => c.image === cover.image);
+        if (target) { target.image = clean; target.raw = false; Storage.set(LIB_KEY, drafts); cover.image = clean; cover.raw = false; }
+      }
+    }).catch(() => {
+      statusEl.textContent = '水印去除失败（网络受限），显示原图';
+    });
+  }
+
+  box.querySelector('#lb_save').onclick = async (e) => {
+    e.stopPropagation();
+    try {
+      const resp = await fetch(currentSrc);
+      const blob = await resp.blob();
+      const aEl = document.createElement('a');
+      aEl.href = URL.createObjectURL(blob);
+      aEl.download = `配图_${cover.position || coverIdx + 1}_${Date.now()}.${currentSrc.startsWith('data:image/png') ? 'png' : 'jpg'}`;
+      document.body.appendChild(aEl);
+      aEl.click();
+      aEl.remove();
+      setTimeout(() => URL.revokeObjectURL(aEl.href), 5000);
+      toast('图片已保存');
+    } catch (err) {
+      window.open(currentSrc, '_blank');
+    }
   };
 }
 

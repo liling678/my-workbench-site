@@ -19,14 +19,17 @@ export const Storage = {
     }
   },
   set(key, val) {
+    let ok = true;
     try {
       localStorage.setItem(PREFIX + key, JSON.stringify(val));
     } catch (e) {
+      ok = false;
       console.warn('storage.set failed', key, e);
     }
     for (const h of afterSetHooks) {
       try { h(key, val); } catch (e) { console.warn('afterSet hook error', e); }
     }
+    return ok; // false = 写入失败（多为 localStorage 容量超限），调用方可感知并处理
   },
   remove(key) {
     localStorage.removeItem(PREFIX + key);

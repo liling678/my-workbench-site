@@ -3,11 +3,22 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v15';
+export const APP_VERSION = 'v16';
 export const APP_DATE = '2026-07-27';
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v16', date: '2026-07-27',
+    items: [
+      '修复：摘要/朋友圈文案、封面/配图建议未自动填充（模型没按格式输出时自动补一次生成）',
+      '内容生成页去掉「保存草稿」按钮（内容本来就实时自动保存），按钮排版对齐',
+      '配图质量优化：禁止AI画手部/清晰人脸/电子屏幕（这些最容易画崩），优先静物风景',
+      '文章库图片支持点击放大 + 保存，放大时自动去除AI水印并回存干净版',
+      '修复：图片库入库静默失败（浏览器存储超限），改为自动腾空间重试，上限调整为60张',
+      '图片库新增自动补录：打开时把文章库里漏掉的历史图片补进来',
+    ],
+  },
   {
     version: 'v15', date: '2026-07-27',
     items: [
