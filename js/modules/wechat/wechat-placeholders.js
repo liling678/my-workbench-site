@@ -1,9 +1,9 @@
-// wechat-placeholders.js — 公众号板块入口：风格画像 + 热点搜集 + 内容生成 + 爆款工具箱 + 文章库 + 图片库
+// wechat-placeholders.js — 公众号板块入口：风格画像 + 热点·爆款 + 对标文章 + 内容生成 + 文章库 + 图片库
 import { registerModule, Icons } from '../../registry.js';
 import { renderStyleModule } from './style-profile.js';
-import { renderHotSearch } from './hot-search.js';
+import { renderHotHub } from './hot-hub.js';
 import { renderContentGen } from './content-gen.js';
-import { renderTopicTools } from './topic-tools.js';
+import { renderBenchmark } from './benchmark-articles.js';
 import { renderArticleLibrary } from './article-library.js';
 import { renderImageLibrary } from './image-library.js';
 
@@ -16,12 +16,20 @@ export function initWechatPlaceholders() {
     render: renderStyleModule
   });
 
-  // 热点搜集（含灵感库）
+  // 热点·爆款（热点搜集 + 爆款工具箱 合并菜单）
   registerModule('wechat-hot', {
     section: 'wechat',
-    title: '热点搜集',
+    title: '热点·爆款',
     icon: Icons.fire,
-    render: renderHotSearch
+    render: renderHotHub
+  });
+
+  // 对标文章（独立菜单：粘贴链接自动解析）
+  registerModule('wechat-benchmark', {
+    section: 'wechat',
+    title: '对标文章',
+    icon: Icons.target,
+    render: renderBenchmark
   });
 
   // 内容生成（5步流程）
@@ -30,14 +38,6 @@ export function initWechatPlaceholders() {
     title: '内容生成',
     icon: Icons.edit,
     render: renderContentGen
-  });
-
-  // 爆款工具箱（爆款选题生成 + 爆款选题拆解）
-  registerModule('wechat-topic-tools', {
-    section: 'wechat',
-    title: '爆款工具箱',
-    icon: Icons.wechat,
-    render: renderTopicTools
   });
 
   // 文章库（浏览所有保存过的文章）

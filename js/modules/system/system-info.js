@@ -3,11 +3,20 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v16';
+export const APP_VERSION = 'v17';
 export const APP_DATE = '2026-07-27';
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v17', date: '2026-07-27',
+    items: [
+      '菜单调整：「热点搜集」和「爆款工具箱」合并为「热点·爆款」（顶部标签切换）',
+      '新增「对标文章」独立菜单：从热点搜集里拆出来',
+      '对标文章支持粘贴链接自动解析：自动抓取文章内容、AI 填充标题/公众号/标签/分析总结',
+      '抓取失败时可粘贴全文，点「AI 解析填充」自动填好信息；支持查看/复制已存全文',
+    ],
+  },
   {
     version: 'v16', date: '2026-07-27',
     items: [

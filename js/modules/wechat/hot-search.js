@@ -1,10 +1,10 @@
-// hot-search.js — 热点搜集 + 灵感库
+// hot-search.js — 热点搜集
 // 上半：实时拉取热榜（微博/知乎/头条），按风格画像关键词过滤展示10条
 // 下半：手动输入搜集要求 → 点击搜索，在实时热榜+内置选题库中匹配10条
-// 底部：灵感库·对标文章
+// （对标文章已拆分为独立菜单 benchmark-articles.js，这里保留「保存到对标」入口）
 // 数据源：60s API (https://60s-api.viki.moe)，支持CORS；失败时回退内置选题库
 import { Storage } from '../../storage.js';
-import { openModal, closeModal, confirmDialog, toast, fmtDate, escapeHtml } from '../../ui.js';
+import { toast, escapeHtml } from '../../ui.js';
 import { Icons } from '../../registry.js';
 import { loadProfile } from './style-profile.js';
 
@@ -255,12 +255,11 @@ function saveTopicToInspiration(topic) {
     createdAt: Date.now(),
   });
   saveInspo(list);
-  toast('已保存到对标文章');
+  toast('已保存，去「对标文章」菜单查看');
   return true;
 }
 
 export function renderHotSearch(container) {
-  const inspos = loadInspo().sort((a, b) => b.createdAt - a.createdAt);
   const profile = loadProfile();
   const accountName = profile?.publicAccount || '本号';
 
@@ -301,18 +300,7 @@ export function renderHotSearch(container) {
       </div>
       <div id="searchResult" style="margin-top:16px"></div>
     </div>
-
-    <!-- 灵感库·对标文章 -->
-    <div class="section-title">
-      <span>灵感库 · 对标文章</span>
-      <span class="cat-count">${inspos.length}</span>
-      <button class="btn btn-primary" id="addInspoBtn" style="margin-left:auto">${Icons.plus} 添加对标</button>
-    </div>
-
-    <div class="list" id="inspoList"></div>
   `;
-
-  renderInspoList(container, inspos);
 
   // 异步加载实时热榜
   loadStyleSection(container, false);
@@ -343,8 +331,6 @@ export function renderHotSearch(container) {
     `;
     bindTopicActions(resultEl, results, container);
   };
-
-  container.querySelector('#addInspoBtn').onclick = () => openInspoForm(container, null);
 }
 
 // 加载上半部分实时热点
@@ -377,11 +363,7 @@ function bindTopicActions(scopeEl, topics, container) {
   scopeEl.querySelectorAll('.topic-save').forEach(btn => {
     btn.onclick = () => {
       const idx = parseInt(btn.dataset.idx);
-      if (saveTopicToInspiration(topics[idx])) {
-        renderInspoList(container, loadInspo().sort((a, b) => b.createdAt - a.createdAt));
-        const countEl = container.querySelector('.cat-count');
-        if (countEl) countEl.textContent = loadInspo().length;
-      }
+      saveTopicToInspiration(topics[idx]);
     };
   });
   scopeEl.querySelectorAll('.topic-copy').forEach(btn => {
@@ -393,116 +375,4 @@ function bindTopicActions(scopeEl, topics, container) {
       );
     };
   });
-}
-
-function renderInspoList(container, inspos) {
-  const el = container.querySelector('#inspoList');
-  if (!el) return;
-  if (inspos.length === 0) {
-    el.innerHTML = `<div class="empty"><div class="empty-icon">${Icons.link}</div><div class="empty-title">还没有对标文章</div><div class="empty-desc">点击「添加对标」或在上方热点中「保存到对标」</div></div>`;
-    return;
-  }
-  el.innerHTML = inspos.map(a => `
-    <div class="list-item" data-id="${a.id}">
-      <div class="list-item-head">
-        <div style="flex:1;min-width:0">
-          <div class="list-item-title">${escapeHtml(a.title || '未填写标题')}</div>
-          ${a.summary ? `<div class="list-item-body" style="margin-top:4px">${escapeHtml(a.summary)}</div>` : ''}
-        </div>
-        <div class="list-item-actions">
-          ${a.link ? `<a href="${escapeAttr(a.link)}" target="_blank" class="icon-btn btn-sm" title="打开链接">${Icons.link}</a>` : ''}
-          <button class="icon-btn btn-sm inspo-edit" title="编辑">${Icons.edit}</button>
-          <button class="icon-btn btn-sm inspo-del" title="删除">${Icons.trash}</button>
-        </div>
-      </div>
-      <div class="list-item-meta">
-        ${a.account ? `<span>📢 ${escapeHtml(a.account)}</span>` : ''}
-        ${a.reads ? `<span>👁 ${escapeHtml(a.reads)}</span>` : ''}
-        ${a.likes ? `<span>👍 ${escapeHtml(a.likes)}</span>` : ''}
-        ${a.tags ? `<span class="badge badge-gray">${escapeHtml(a.tags)}</span>` : ''}
-        ${a.source ? `<span class="badge badge-green">${escapeHtml(a.source)}</span>` : ''}
-        <span>${fmtDate(a.createdAt)}</span>
-      </div>
-    </div>
-  `).join('');
-
-  el.querySelectorAll('.list-item').forEach(item => {
-    const id = item.dataset.id;
-    item.querySelector('.inspo-edit').onclick = () => openInspoForm(container, id);
-    item.querySelector('.inspo-del').onclick = async () => {
-      if (await confirmDialog({ title: '删除', message: '确定删除这篇对标文章吗？', confirmText: '删除', danger: true })) {
-        saveInspo(loadInspo().filter(a => a.id !== id));
-        toast('已删除');
-        renderInspoList(container, loadInspo().sort((a, b) => b.createdAt - a.createdAt));
-      }
-    };
-  });
-}
-
-function openInspoForm(container, id) {
-  const list = loadInspo();
-  const item = id ? list.find(a => a.id === id) : {};
-  const isEdit = !!id;
-
-  openModal({
-    title: isEdit ? '编辑对标文章' : '添加对标文章',
-    body: `
-      <div class="field">
-        <label class="field-label">文章标题 <span class="req">*</span></label>
-        <input class="input" id="inspo_title" value="${escapeAttr(item.title)}" placeholder="文章标题" autofocus>
-      </div>
-      <div class="field">
-        <label class="field-label">文章链接</label>
-        <input class="input" id="inspo_link" value="${escapeAttr(item.link)}" placeholder="公众号文章链接（可选）">
-      </div>
-      <div class="field">
-        <label class="field-label">公众号名称</label>
-        <input class="input" id="inspo_account" value="${escapeAttr(item.account)}" placeholder="如：树予我说">
-      </div>
-      <div style="display:flex;gap:12px">
-        <div class="field" style="flex:1">
-          <label class="field-label">阅读量</label>
-          <input class="input" id="inspo_reads" value="${escapeAttr(item.reads)}" placeholder="如 10万+">
-        </div>
-        <div class="field" style="flex:1">
-          <label class="field-label">点赞量</label>
-          <input class="input" id="inspo_likes" value="${escapeAttr(item.likes)}" placeholder="如 500">
-        </div>
-      </div>
-      <div class="field">
-        <label class="field-label">标签/分类</label>
-        <input class="input" id="inspo_tags" value="${escapeAttr(item.tags)}" placeholder="如：女性成长、爆款标题">
-      </div>
-      <div class="field">
-        <label class="field-label">分析总结</label>
-        <textarea class="textarea" id="inspo_summary" style="min-height:100px" placeholder="这篇文章为什么火？有什么值得学习的？">${escapeHtml(item.summary)}</textarea>
-      </div>`,
-    foot: `<button class="btn" id="inspo_cancel">取消</button><button class="btn btn-primary" id="inspo_save">${isEdit ? '保存' : '添加'}</button>`
-  });
-
-  document.getElementById('inspo_cancel').onclick = closeModal;
-
-  document.getElementById('inspo_save').onclick = () => {
-    const title = document.getElementById('inspo_title').value.trim();
-    if (!title) { toast('请填写文章标题'); return; }
-    const data = {
-      link: document.getElementById('inspo_link').value.trim(),
-      title,
-      account: document.getElementById('inspo_account').value.trim(),
-      reads: document.getElementById('inspo_reads').value.trim(),
-      likes: document.getElementById('inspo_likes').value.trim(),
-      tags: document.getElementById('inspo_tags').value.trim(),
-      summary: document.getElementById('inspo_summary').value.trim(),
-    };
-    if (isEdit) {
-      const i = list.findIndex(a => a.id === id);
-      list[i] = { ...list[i], ...data };
-    } else {
-      list.push({ id: Storage.uid(), ...data, source: '手动添加', createdAt: Date.now() });
-    }
-    saveInspo(list);
-    closeModal();
-    toast(isEdit ? '已保存' : '已添加');
-    renderInspoList(container, loadInspo().sort((a, b) => b.createdAt - a.createdAt));
-  };
 }

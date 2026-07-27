@@ -165,7 +165,7 @@ function renderStep1(el, container) {
 
     <div class="section-title">\uD83D\uDCA1 灵感库 · 对标文章 <span class="cat-count">${inspos.length}</span></div>
     <div class="list" id="inspoTopicList">
-      ${inspos.length === 0 ? `<div class="empty" style="padding:20px"><div class="empty-title">灵感库还没有对标文章</div><div class="empty-desc">去「热点搜集」页面保存热点或添加对标文章</div></div>` :
+      ${inspos.length === 0 ? `<div class="empty" style="padding:20px"><div class="empty-title">灵感库还没有对标文章</div><div class="empty-desc">去「热点·爆款」保存热点，或去「对标文章」粘贴链接自动解析</div></div>` :
         inspos.map(a => `
           <div class="list-item" data-id="${a.id}">
             <div class="list-item-head">
@@ -188,7 +188,8 @@ function renderStep1(el, container) {
   el.querySelector('#addTopicBtn').onclick = () => openTopicModal(container, null, rerender);
 
   el.querySelector('#aiTopicToolBtn').onclick = () => {
-    if (window.__wbNavigate) window.__wbNavigate('wechat-topic-tools');
+    Storage.set('wechat_hothub_tab', 'tools'); // 打开合并菜单的「爆款工具箱」标签
+    if (window.__wbNavigate) window.__wbNavigate('wechat-hot');
     else toast('请刷新页面后重试');
   };
 
