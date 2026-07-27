@@ -3,11 +3,20 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v20';
-export const APP_DATE = '2026-07-27';
+export const APP_VERSION = 'v21';
+export const APP_DATE = '2026-07-28';
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v21', date: '2026-07-28',
+    items: [
+      '英语学习模块大瘦身：删除单词库/口语/听力/阅读/写作/备考中心等所有复杂功能',
+      '英语学习改为极简「每日学习计划」：按周一~周日安排每天要学什么，今日计划可勾选完成（按日期记录、跨天重置）',
+      '具体背单词/口语练习交给用户自己的 App，工作台只负责列计划清单',
+      '清理了随雅思模块产生的无用 CSS（翻卡、每日计划横幅、导入区等）',
+    ],
+  },
   {
     version: 'v20', date: '2026-07-27',
     items: [
