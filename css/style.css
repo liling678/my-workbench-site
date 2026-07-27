@@ -213,6 +213,11 @@ input, textarea, select { font-family: inherit; }
 .sync-steps code { background: var(--primary-bg); color: var(--primary); padding: 1px 6px; border-radius: 5px; font-size: 12.5px; word-break: break-all; }
 .sync-actions { display: flex; gap: 10px; margin: 12px 0 4px; }
 .sync-actions .btn { flex: 1; }
+.sync-log { margin-top: 10px; padding: 10px 12px; background: var(--bg-input); border-radius: 8px; font-size: 12.5px; color: var(--text-soft); line-height: 1.9; }
+.sync-log-row { display: flex; align-items: center; gap: 6px; }
+.sync-log-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.sync-log-dot.up { background: var(--primary); }
+.sync-log-dot.down { background: #2b8a6b; }
 .btn-xs { padding: 3px 10px; font-size: 12px; }
 .sql-block { background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 10px 12px; font-size: 12px; line-height: 1.5; overflow-x: auto; white-space: pre; margin: 6px 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 
@@ -356,6 +361,23 @@ input, textarea, select { font-family: inherit; }
   background: var(--bg-card); border-radius: var(--radius-lg);
   padding: 16px; margin-bottom: 16px;
 }
+/* ===== Countdown card ===== */
+.countdown-card {
+  background: linear-gradient(135deg, var(--primary) 0%, #149a76 100%);
+  border-radius: var(--radius-lg); padding: 16px; margin-bottom: 16px; color: #fff;
+}
+.countdown-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.countdown-head-left { display: flex; align-items: center; gap: 6px; }
+.countdown-head-icon { font-size: 14px; }
+.countdown-head-title { font-size: 14px; font-weight: 600; }
+.countdown-manage { font-size: 12px; padding: 3px 12px; background: rgba(255,255,255,0.22); border-radius: 20px; cursor: pointer; }
+.countdown-manage:active { background: rgba(255,255,255,0.35); }
+.countdown-name { font-size: 14px; opacity: 0.95; margin-bottom: 2px; }
+.countdown-big { font-size: 40px; font-weight: 700; line-height: 1.1; }
+.countdown-unit { font-size: 16px; font-weight: 500; margin-left: 4px; }
+.countdown-sub { font-size: 12px; opacity: 0.9; margin-top: 2px; }
+.countdown-sub b { font-size: 14px; }
+.countdown-empty { font-size: 13px; opacity: 0.9; line-height: 1.7; padding: 8px 0; }
 .checkin-head {
   display: flex; justify-content: space-between; align-items: center;
   margin-bottom: 14px;
@@ -485,13 +507,14 @@ input, textarea, select { font-family: inherit; }
 .task-item.completed .task-text { text-decoration: line-through; color: var(--text-muted); }
 .task-meta { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
 .task-meta.manual { color: var(--primary); }
-.task-actions { display: flex; gap: 4px; }
+.task-actions { display: flex; gap: 6px; }
 .task-action-btn {
-  background: none; border: none; color: var(--text-light);
-  width: 28px; height: 28px; border-radius: 6px;
+  background: var(--bg-input); border: 0.5px solid var(--border); color: var(--text-light);
+  width: 36px; height: 36px; border-radius: 8px;
   display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s;
 }
-.task-action-btn:active { background: var(--primary-bg); color: var(--primary); }
+.task-action-btn:active { background: var(--primary-bg); color: var(--primary); border-color: var(--primary-light); }
 
 /* ===== Buttons ===== */
 .btn {
@@ -506,7 +529,7 @@ input, textarea, select { font-family: inherit; }
 .btn-accent { background: var(--primary-bg); color: var(--primary); border-color: var(--primary-light); font-weight: 600; }
 .btn-sm { padding: 5px 10px; font-size: 12px; }
 .btn-danger { color: var(--red); border-color: var(--red); }
-.btn svg { width: 14px; height: 14px; }
+.btn svg { width: 16px; height: 16px; }
 
 /* ===== Form ===== */
 .field { margin-bottom: 14px; }
@@ -583,13 +606,15 @@ input, textarea, select { font-family: inherit; }
 }
 .tp-prio { width: auto; min-width: 56px; }
 .tp-desc { flex: 1; min-width: 0; }
-.tp-actions { display: flex; flex-direction: column; gap: 4px; }
+.tp-actions { display: flex; flex-direction: column; gap: 6px; }
 .icon-btn {
-  background: none; border: none; color: var(--text-light);
-  width: 28px; height: 28px; border-radius: 6px;
+  background: var(--bg-input); border: 0.5px solid var(--border); color: var(--text-light);
+  width: 36px; height: 36px; border-radius: 8px;
   display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s;
 }
-.icon-btn:active { background: var(--primary-bg); color: var(--primary); }
+.icon-btn svg { width: 16px; height: 16px; }
+.icon-btn:active { background: var(--primary-bg); color: var(--primary); border-color: var(--primary-light); }
 
 /* ===== Prompt box ===== */
 .prompt-box {
@@ -737,13 +762,14 @@ input, textarea, select { font-family: inherit; }
 .photo-date { font-size: 10px; opacity: 0.8; }
 .photo-del {
   position: absolute; top: 6px; right: 6px;
-  background: rgba(0,0,0,0.4); color: white;
+  background: rgba(0,0,0,0.55); color: white;
   border: none; border-radius: 50%;
-  width: 24px; height: 24px;
+  width: 32px; height: 32px;
   display: flex; align-items: center; justify-content: center;
-  opacity: 0; transition: opacity 0.2s;
+  opacity: 0.92; transition: opacity 0.2s, transform 0.1s;
 }
-.photo-item:active .photo-del { opacity: 1; }
+.photo-del svg { width: 16px; height: 16px; }
+.photo-del:active { opacity: 1; transform: scale(0.92); }
 
 @media (min-width: 768px) {
   .photo-wall { grid-template-columns: repeat(3, 1fr); }
@@ -1005,13 +1031,13 @@ input, textarea, select { font-family: inherit; }
   font-size: 11px; color: var(--text-muted);
 }
 .list-item-actions {
-  display: flex; gap: 4px; flex-shrink: 0;
+  display: flex; gap: 6px; flex-shrink: 0;
 }
 .icon-btn.btn-sm {
-  width: 26px; height: 26px;
+  width: 36px; height: 36px;
 }
 .icon-btn.btn-sm svg {
-  width: 12px; height: 12px;
+  width: 16px; height: 16px;
 }
 
 /* ===== 热点搜集 ===== */
@@ -1333,4 +1359,58 @@ input, textarea, select { font-family: inherit; }
   25% { transform: translateX(-6px); }
   50% { transform: translateX(6px); }
   75% { transform: translateX(-3px); }
+}
+
+/* ===== 雅思备考模块 ===== */
+.ielts-practice { background: var(--bg-card); border-radius: var(--radius-lg); padding: 20px 16px; text-align: center; }
+.practice-progress { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; }
+.flip-card {
+  background: linear-gradient(135deg, var(--primary) 0%, #149a76 100%);
+  color: #fff; border-radius: 16px; padding: 32px 18px; cursor: pointer;
+  min-height: 180px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  box-shadow: 0 8px 24px rgba(15,110,86,0.18); transition: transform .15s;
+}
+.flip-card:active { transform: scale(0.98); }
+.flip-word { font-size: 30px; font-weight: 600; letter-spacing: 0.5px; }
+.flip-phonetic { font-size: 14px; opacity: 0.85; margin-top: 6px; }
+.flip-hint { font-size: 13px; opacity: 0.9; margin-top: 14px; border: 1px dashed rgba(255,255,255,0.6); padding: 6px 14px; border-radius: 20px; }
+.flip-detail { width: 100%; }
+.flip-pos { display: inline-block; font-size: 12px; background: rgba(255,255,255,0.2); padding: 2px 10px; border-radius: 10px; margin-bottom: 10px; }
+.flip-meaning { font-size: 18px; font-weight: 500; margin-bottom: 10px; line-height: 1.5; }
+.flip-example { font-size: 13px; opacity: 0.92; font-style: italic; line-height: 1.6; margin-bottom: 8px; }
+.flip-note { font-size: 13px; opacity: 0.92; line-height: 1.6; }
+.flip-actions { display: none; gap: 8px; margin-top: 16px; }
+.rate-btn {
+  flex: 1; border: none; border-radius: 10px; padding: 12px 4px; font-size: 13px; font-weight: 500;
+  background: var(--bg-input); color: var(--text-body); cursor: pointer;
+}
+.rate-know { background: #e6f7ef; color: #0F6E56; }
+.rate-fuzzy { background: #fff6e6; color: #b5790b; }
+.rate-unknow { background: #fdeaea; color: #c0392b; }
+.ielts-practice.done .practice-emoji { font-size: 48px; margin-bottom: 8px; }
+.practice-done-title { font-size: 18px; font-weight: 600; color: var(--text-title); margin-bottom: 6px; }
+.practice-done-sub { font-size: 13px; color: var(--text-muted); margin-bottom: 16px; }
+
+/* 口语卡 */
+.speak-card { background: var(--bg-card); border-radius: var(--radius-md); padding: 14px; margin-bottom: 10px; }
+.speak-card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.speak-topic { font-size: 14px; font-weight: 500; color: var(--text-title); display: flex; align-items: center; gap: 6px; }
+.speak-question { font-size: 13px; color: var(--text-body); line-height: 1.6; margin-bottom: 8px; }
+.speak-tips { font-size: 12px; color: var(--text-muted); line-height: 1.6; background: var(--bg-input); border-radius: 8px; padding: 8px 10px; }
+.speak-answer { font-size: 13px; color: var(--text-body); line-height: 1.6; margin-top: 8px; }
+.speak-practice-head { margin-bottom: 2px; }
+.rec-box { background: var(--bg-input); border-radius: 10px; padding: 10px 12px; }
+.rec-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rec-status { font-size: 11px; color: var(--text-muted); }
+
+/* 备考中心 */
+.prep-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.prep-card { background: var(--bg-card); border-radius: var(--radius-md); padding: 14px; }
+.prep-card-title { font-size: 14px; font-weight: 600; color: var(--text-title); margin-bottom: 10px; }
+.prep-form .field { margin-bottom: 10px; }
+.prep-tip { font-size: 12px; color: var(--text-muted); line-height: 1.6; margin-top: 8px; }
+.prep-plan-item { font-size: 13px; color: var(--text-body); line-height: 1.7; padding: 6px 0; border-bottom: 1px dashed var(--border-light); }
+.prep-plan-item:last-child { border-bottom: none; }
+@media (max-width: 560px) {
+  .prep-grid { grid-template-columns: 1fr; }
 }

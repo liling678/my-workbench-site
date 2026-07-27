@@ -11,6 +11,7 @@ import { openModal, closeModal, toast, escapeHtml } from './ui.js';
 
 const CONFIG_KEY = 'cloud_config';   // { pat, owner, repo, syncCode }
 const TS_KEY = 'cloud_ts';           // { key: lastWriteTs } 用于逐 key last-write-wins
+const SYNC_LOG_KEY = 'cloud_sync_log'; // { lastPush, lastPushCount, lastPull, lastPullCount }
 const SYNC_BRANCH = 'wb-sync';       // 数据单独存此分支，避免污染源码 main 分支
 // 国内网络常拦截 api.github.com 直连：先直连、失败后依次尝试多个公开 CORS 代理兜底。
 // 代理按成功率大致排序（thingproxy 转发完整 header，最适合 GitHub API 的 PUT 带 token）。
@@ -117,6 +118,23 @@ export function loadCloudConfig() { return Storage.get(CONFIG_KEY, null); }
 function saveCloudConfig(c) { Storage.set(CONFIG_KEY, c); }
 function loadTs() { return Storage.get(TS_KEY, {}); }
 function saveTs(t) { Storage.set(TS_KEY, t); }
+function loadSyncLog() { return Storage.get(SYNC_LOG_KEY, {}); }
+function saveSyncLog(l) { Storage.set(SYNC_LOG_KEY, l); }
+
+// 友好显示同步时间：今天/昨天 + 时分，更早则 MM-DD HH:mm
+export function fmtSyncTime(ts) {
+  if (!ts) return '从未';
+  const d = new Date(ts);
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const hm = pad(d.getHours()) + ':' + pad(d.getMinutes());
+  const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  if (sameDay) return '今天 ' + hm;
+  const y = new Date(now); y.setDate(now.getDate() - 1);
+  const yesterday = y.getFullYear() === d.getFullYear() && y.getMonth() === d.getMonth() && y.getDate() === d.getDate();
+  if (yesterday) return '昨天 ' + hm;
+  return (d.getMonth() + 1) + '-' + d.getDate() + ' ' + hm;
+}
 
 export function isCloudEnabled() {
   const c = loadCloudConfig();
@@ -289,7 +307,12 @@ export async function pushNow(showToast = true) {
     setStatus('syncing');
     const pushed = await writeRemote();
     setStatus('ok');
+    const log = loadSyncLog();
+    log.lastPush = Date.now();
+    log.lastPushCount = pushed;
+    saveSyncLog(log);
     if (showToast) toast(pushed > 0 ? `已上传 ${pushed} 条到云端` : '没有新数据需要上传');
+    updateSyncLogView();
     return pushed;
   } catch (e) {
     console.error('pushNow failed', e);
@@ -306,6 +329,11 @@ export async function pullNow(showToast = true) {
     setStatus('syncing');
     const pulled = await pullAll();
     setStatus('ok');
+    const log = loadSyncLog();
+    log.lastPull = Date.now();
+    log.lastPullCount = pulled;
+    saveSyncLog(log);
+    updateSyncLogView();
     // 关闭设置弹窗并刷新当前页面，让拉取的数据立即显示（无需重启）
     try { closeModal(); } catch (e) {}
     window.dispatchEvent(new Event('wb-data-synced'));
@@ -331,6 +359,18 @@ function setStatus(s) {
 }
 
 // 顶栏同步状态按钮已移除：当前版本严格采用手动上传/拉取，避免造成自动同步的误解。
+
+// 同步记录展示：设置弹窗内实时显示上次上传/拉取时间
+function updateSyncLogView() {
+  const el = document.getElementById('cloudSyncLog');
+  if (!el) return;
+  const log = loadSyncLog();
+  const pushTxt = log.lastPush ? `${fmtSyncTime(log.lastPush)}（${log.lastPushCount} 条）` : '尚未上传';
+  const pullTxt = log.lastPull ? `${fmtSyncTime(log.lastPull)}（${log.lastPullCount} 条）` : '尚未拉取';
+  el.innerHTML = `
+    <div class="sync-log-row"><span class="sync-log-dot up"></span>上次上传：<b>${pushTxt}</b></div>
+    <div class="sync-log-row"><span class="sync-log-dot down"></span>上次拉取：<b>${pullTxt}</b></div>`;
+}
 
 const GUIDE_STEPS = `
   <ol class="sync-steps">
@@ -424,6 +464,7 @@ export function openSyncSettings() {
         <button class="btn btn-primary" id="cloudPullBtn">⬇ 从云端拉取</button>
         <button class="btn btn-ghost" id="cloudPushBtn">⬆ 上传到云端</button>
       </div>
+      <div class="sync-log" id="cloudSyncLog"></div>
       <div class="form-hint" style="margin-top:8px">
         用法：A 设备改完数据 → 点「⬆ 上传到云端」存到 GitHub；B 设备点「⬇ 从云端拉取」下载（拉取后界面自动刷新，无需重启）。
       </div>
@@ -433,6 +474,7 @@ export function openSyncSettings() {
       <button class="btn btn-primary" id="cloudSaveBtn">保存设置</button>
     `
   });
+  updateSyncLogView();
   document.getElementById('cloudTestBtn').onclick = async () => {
     const owner = document.getElementById('cloudOwner').value.trim();
     const repo = document.getElementById('cloudRepo').value.trim();

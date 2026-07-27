@@ -35,6 +35,7 @@ const WEIGHT_KEY = 'weight_records';
 const CHECKIN_KEY = 'checkin_records';
 const WEIGHT_TARGET_KEY = 'weight_target';
 const QUOTE_KEY = 'daily_quote';
+const COUNTDOWN_KEY = 'countdown_events';
 
 // 当前激活的任务tab
 let activeTaskTab = 'daily';
@@ -72,6 +73,36 @@ function hashDate(str) {
 
 function getWeightTarget() {
   return Storage.get(WEIGHT_TARGET_KEY, 104);
+}
+
+function loadCountdowns() { return Storage.get(COUNTDOWN_KEY, []); }
+function saveCountdowns(list) { Storage.set(COUNTDOWN_KEY, list); }
+
+// 返回下一个即将到来的目标（按日期升序，剔除已过期）
+function getNextCountdown() {
+  const today = todayKey();
+  const list = loadCountdowns()
+    .filter(e => e.date >= today)
+    .sort((a, b) => a.date < b.date ? -1 : 1);
+  return list[0] || null;
+}
+function daysBetween(fromKey, toDateStr) {
+  const a = new Date(fromKey + 'T00:00:00');
+  const b = new Date(toDateStr + 'T00:00:00');
+  return Math.round((b - a) / 86400000);
+}
+
+function renderCountdownBody() {
+  const next = getNextCountdown();
+  if (!next) {
+    return `<div class="countdown-empty">还没有目标，点右上角「管理」添加<br>例如：软考 / 雅思 / 生日…</div>`;
+  }
+  const d = daysBetween(todayKey(), next.date);
+  const label = d === 0 ? '就是今天！' : `还剩 <b>${d}</b> 天`;
+  return `
+    <div class="countdown-name">${escapeHtml(next.name)}</div>
+    <div class="countdown-big">${d}<span class="countdown-unit">天</span></div>
+    <div class="countdown-sub">${next.date} · ${label}</div>`;
 }
 
 function getGreeting() {
@@ -435,6 +466,14 @@ export function initDashboard(container) {
       </div>
     </div>
 
+    <div class="countdown-card">
+      <div class="countdown-head">
+        <div class="countdown-head-left"><span class="countdown-head-icon">\u23F3</span><span class="countdown-head-title">\u76EE\u6807\u5012\u8BA1\u65F6</span></div>
+        <span class="countdown-manage" id="cdManageBtn">\u7BA1\u7406</span>
+      </div>
+      ${renderCountdownBody()}
+    </div>
+
     <div class="task-section-head">
       <span class="task-section-title">\u6BCF\u65E5\u8BA1\u5212</span>
     </div>
@@ -457,6 +496,9 @@ export function initDashboard(container) {
 
   // 同步按钮
   container.querySelector('#dashSyncBtn').onclick = () => openSyncSettings();
+
+  // 倒计时管理
+  container.querySelector('#cdManageBtn').onclick = () => openCountdownManage(container);
 
   // 打卡
   container.querySelectorAll('[data-checkin]').forEach(el => {
@@ -540,6 +582,89 @@ export function initDashboard(container) {
       openAddTaskModal(container, cat);
     };
   });
+}
+
+function openCountdownManage(container) {
+  const renderList = () => {
+    const list = loadCountdowns().sort((a, b) => a.date < b.date ? -1 : 1);
+    const today = todayKey();
+    if (list.length === 0) {
+      return `<div class="empty"><div class="empty-icon">⏳</div><div class="empty-title">还没有目标</div><div class="empty-desc">添加考试、生日、旅行等，首页会显示最近一个的倒计时</div></div>`;
+    }
+    return `<div class="list" id="cdList">` + list.map(e => {
+      const d = daysBetween(today, e.date);
+      const left = d === 0 ? '今天' : d < 0 ? '已过期' : `剩 ${d} 天`;
+      return `<div class="list-item" data-id="${e.id}">
+        <div class="list-item-head">
+          <div style="flex:1;min-width:0">
+            <div class="list-item-title">${escapeHtml(e.name)}</div>
+            <div class="list-item-body" style="margin-top:4px;color:var(--text-muted)">${e.date} · ${left}</div>
+          </div>
+          <div class="list-item-actions">
+            <button class="icon-btn btn-sm cd-edit" title="编辑">${Icons.edit}</button>
+            <button class="icon-btn btn-sm cd-del" title="删除">${Icons.trash}</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('') + `</div>`;
+  };
+  openModal({
+    title: '目标倒计时管理',
+    body: `
+      <div class="field">
+        <label class="field-label">目标名称</label>
+        <input class="input" id="cdName" placeholder="如：软考 / 雅思 / 生日" autofocus>
+      </div>
+      <div class="field">
+        <label class="field-label">目标日期</label>
+        <input class="input" id="cdDate" type="date">
+      </div>
+      <div class="sync-actions">
+        <button class="btn btn-primary" id="cdAddBtn">＋ 添加目标</button>
+      </div>
+      <div id="cdManageList">${renderList()}</div>
+    `,
+    foot: `<button class="btn" id="cdClose">关闭</button>`
+  });
+  document.getElementById('cdClose').onclick = closeModal;
+  document.getElementById('cdAddBtn').onclick = () => {
+    const name = document.getElementById('cdName').value.trim();
+    const date = document.getElementById('cdDate').value;
+    if (!name || !date) { toast('请填写名称和日期'); return; }
+    const list = loadCountdowns();
+    list.push({ id: Storage.uid(), name, date });
+    saveCountdowns(list);
+    document.getElementById('cdName').value = '';
+    document.getElementById('cdDate').value = '';
+    document.getElementById('cdManageList').innerHTML = renderList();
+    toast('已添加');
+    initDashboard(container);
+  };
+  const bindList = () => {
+    document.querySelectorAll('#cdList .list-item').forEach(item => {
+      const id = item.dataset.id;
+      item.querySelector('.cd-edit').onclick = () => {
+        const e = loadCountdowns().find(x => x.id === id);
+        if (!e) return;
+        document.getElementById('cdName').value = e.name;
+        document.getElementById('cdDate').value = e.date;
+        const list = loadCountdowns().filter(x => x.id !== id);
+        saveCountdowns(list);
+        document.getElementById('cdManageList').innerHTML = renderList();
+        bindList();
+        initDashboard(container);
+      };
+      item.querySelector('.cd-del').onclick = async () => {
+        if (!await confirmDialog({ title: '删除目标', message: '确定删除这个目标吗？', confirmText: '删除', danger: true })) return;
+        saveCountdowns(loadCountdowns().filter(x => x.id !== id));
+        document.getElementById('cdManageList').innerHTML = renderList();
+        bindList();
+        initDashboard(container);
+        toast('已删除');
+      };
+    });
+  };
+  bindList();
 }
 
 function openCheckinModal(item, container) {

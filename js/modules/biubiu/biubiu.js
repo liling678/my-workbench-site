@@ -82,7 +82,7 @@ export function initBiubiu() {
   registerModule('biubiu-baby', {
     section: 'biubiu',
     title: 'Baby资料',
-    icon: Icons.notes,
+    icon: Icons.paw,
     render: renderBabyProfile
   });
 }

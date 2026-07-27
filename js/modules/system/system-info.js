@@ -3,11 +3,21 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v18';
+export const APP_VERSION = 'v19';
 export const APP_DATE = '2026-07-27';
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v19', date: '2026-07-27',
+    items: [
+      '新增雅思备考模块（资深老师设计）：单词库含 SRS 间隔重复记忆/复习、口语 Part1/2/3 话题卡+老师支招+录音陪练、备考中心（目标分/各科目标/考试日期/老师规划/笔记）',
+      '首页计划页新增「目标倒计时」板块，可添加多个目标（如 10月24 软考）并自动显示剩余天数',
+      '云端同步记录上传/拉取时间：同步设置弹窗内显示最近同步日志（含成功条数），传送成功一目了然',
+      '按钮放大更易点按：复制/编辑/删除等图标按钮统一放大到 36px、图标 16px',
+      'Baby 资料菜单图标改为爪印',
+    ],
+  },
   {
     version: 'v18', date: '2026-07-27',
     items: [
