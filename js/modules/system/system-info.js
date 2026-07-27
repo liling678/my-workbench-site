@@ -3,11 +3,20 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v21';
+export const APP_VERSION = 'v22';
 export const APP_DATE = '2026-07-28';
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v22', date: '2026-07-28',
+    items: [
+      '英语学习模块升级为「老师排好的计划」：首次打开自动种入整体备考路线(基础→分项突破→冲刺三阶段) + 周一到周日每日训练模板',
+      '新增日期进度：设置开始/考试日期后，顶部自动显示「备考第 N 天·第 M 周·距考试 D 天」，每天打开自动更新',
+      '新增「整体备考规划」卡片（可点「编辑整体规划」自由改写老师给的路线）',
+      '每日计划可手动增删改，今日任务按日期勾选、跨天自动重置；具体练习仍用用户自己的 App',
+    ],
+  },
   {
     version: 'v21', date: '2026-07-28',
     items: [

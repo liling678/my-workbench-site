@@ -4,18 +4,54 @@ import { Storage } from '../../storage.js';
 import { openModal, closeModal, confirmDialog, toast, fmtDate, escapeHtml } from '../../ui.js';
 
 const TAROT_KEY = 'learning_tarot';
-const EN_PLAN_KEY = 'english_study_plan';   // 每周学习计划（按星期几安排）
+const EN_PLAN_KEY = 'english_study_plan';     // 每周学习计划（按星期几安排）
+const EN_META_KEY = 'english_plan_meta';       // { startDate, examDate, roadmap }
 
 function loadTarot() { return Storage.get(TAROT_KEY, []); }
 function saveTarot(d) { Storage.set(TAROT_KEY, d); }
 function loadPlan() { return Storage.get(EN_PLAN_KEY, []); }
 function savePlan(d) { Storage.set(EN_PLAN_KEY, d); }
+function loadMeta() {
+  return Storage.get(EN_META_KEY, { startDate: todayStr(), examDate: '', roadmap: DEFAULT_ROADMAP });
+}
+function saveMeta(d) { Storage.set(EN_META_KEY, d); }
 
 const TAROT_TABS = [
   { id: 'cards', name: '牌义笔记' },
   { id: 'spreads', name: '牌阵' },
 ];
 const WEEK_DAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+
+// 老师预填的整体备考路线（可编辑）
+const DEFAULT_ROADMAP = `【整体备考规划】（以 12 周为例，按你的考试日期自行调整）
+阶段一 · 基础打底（第 1–3 周）
+· 每天 30 个核心词，建立词汇底；顺手梳理语法薄弱点
+· 听力先适应语速，阅读练扫读/略读，暂时不追求正确率
+· 每日约 1.5 小时
+
+阶段二 · 分项突破（第 4–8 周）
+· 听力：Section 精听 + 笔记；阅读：同义替换专项
+· 写作：Task1 / Task2 轮流各练；口语：Part1/2 每日 1 题
+· 每日约 2–2.5 小时
+
+阶段三 · 套题冲刺（第 9–12 周）
+· 每周 2 套完整模考（严格计时），当天错题清零
+· 口语 Part3 辩证表达、写作打磨个人模板
+· 每日约 3 小时
+
+每周节奏：周一~周五分项训练，周六模考，周日复盘+休息。
+通用原则：固定时段形成习惯；输入(听/读)与输出(说/写)交替；当天错当天清。`;
+
+// 老师预填的每日训练模板（纯清单，具体练习用你自己的 App）
+const SEED_WEEK = [
+  ['听力 Section 2 精听 30min', '阅读 Passage1 同义替换 20min', '核心词 30 个'],
+  ['口语 Part1 题库 5 题（自录练习）', '写作 Task1 图表作文 1 篇', '核心词 30 个'],
+  ['阅读 Passage2/3 长难句拆解', '听力 Section3 学术对话笔记', '核心词 30 个'],
+  ['口语 Part2 话题卡 1 个（说满 2 分钟）', '写作 Task2 议论文 1 篇', '核心词 30 个'],
+  ['听力 Section4 填空专项', '阅读套题 1 篇（计时）', '核心词 30 个'],
+  ['完整模考 1 套（严格计时）', '错题复盘 + 生词整理'],
+  ['周复盘 + 口语 Part3 辩证表达', '休息调整'],
+];
 
 let tarotTab = 'cards';
 
@@ -25,6 +61,25 @@ function todayStr() {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${d.getFullYear()}-${m}-${day}`;
+}
+function daysBetween(a, b) { // a、b 为 YYYY-MM-DD，返回 b-a 的天数
+  if (!a || !b) return null;
+  const ms = new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00');
+  return Math.round(ms / 86400000);
+}
+
+// 首次打开自动种入老师排好的计划（仅当为空，不覆盖用户已改的内容）
+function ensureSeed() {
+  if (loadPlan().length === 0) {
+    const list = [];
+    SEED_WEEK.forEach((arr, day) => arr.forEach(text => {
+      list.push({ id: Storage.uid(), day, text, doneDates: [] });
+    }));
+    savePlan(list);
+  }
+  const meta = loadMeta();
+  if (!meta.roadmap) { meta.roadmap = DEFAULT_ROADMAP; saveMeta(meta); }
+  if (!meta.startDate) { meta.startDate = todayStr(); saveMeta(meta); }
 }
 
 export function initLearning() {
@@ -59,12 +114,12 @@ export function initLearning() {
     }
   });
 
-  // 英语学习 · 每日计划（仅列计划，具体练习用其他 App）
+  // 英语学习 · 每日计划（老师排好，可手动调整，每天自动更新）
   registerModule('learning-enplan', {
     section: 'learning',
     title: '英语学习',
     icon: Icons.grad,
-    render(container) { renderEnPlan(container); }
+    render(container) { ensureSeed(); renderEnPlan(container); }
   });
 }
 
@@ -257,24 +312,56 @@ function openSpreadForm(container, id) {
   };
 }
 
-// ===================== 英语学习 · 每日计划（极简） =====================
-// 只负责「列出每天要学什么」，具体的背单词 / 口语练习用用户自己的 App。
+// ===================== 英语学习 · 每日计划（老师排好 + 自动更新） =====================
 function renderEnPlan(container) {
   const items = loadPlan();
+  const meta = loadMeta();
   const tIdx = todayIdx();
   const tStr = todayStr();
   const todayItems = items.filter(i => i.day === tIdx);
   const doneCount = todayItems.filter(i => (i.doneDates || []).includes(tStr)).length;
 
+  // 日期进度
+  let progressBits = [`📅 今日（${WEEK_DAYS[tIdx]}）`];
+  const dayFromStart = daysBetween(meta.startDate, tStr);
+  if (dayFromStart !== null) {
+    if (dayFromStart >= 0) {
+      const week = Math.floor(dayFromStart / 7) + 1;
+      progressBits.push(`备考第 ${dayFromStart + 1} 天`);
+      progressBits.push(`第 ${week} 周`);
+    } else {
+      progressBits.push(`还有 ${-dayFromStart} 天开始`);
+    }
+  }
+  const toExam = daysBetween(tStr, meta.examDate);
+  if (toExam !== null) progressBits.push(toExam >= 0 ? `距考试 ${toExam} 天` : '考试已过期');
+
   container.innerHTML = `
     <div class="page-head">
       <div class="page-title">英语学习 · 每日计划</div>
-      <div class="page-desc">在这里列好每天要学什么就行，具体练习用你常用的学习 App</div>
+      <div class="page-desc">老师帮你排好了整体路线和每日清单，可手动调整，每天自动更新</div>
+    </div>
+
+    <div class="plan-progress">${progressBits.join(' · ')}</div>
+
+    <div class="plan-meta">
+      <label class="plan-meta-field">开始日期
+        <input type="date" class="input" id="m_start" value="${escapeAttr(meta.startDate)}">
+      </label>
+      <label class="plan-meta-field">考试日期
+        <input type="date" class="input" id="m_exam" value="${escapeAttr(meta.examDate)}">
+      </label>
+      <button class="btn plan-meta-edit" id="roadmapEditBtn">${Icons.edit} 编辑整体规划</button>
+    </div>
+
+    <div class="plan-overview">
+      <div class="plan-overview-head">📘 整体备考规划</div>
+      <div class="plan-overview-body">${escapeHtml(meta.roadmap)}</div>
     </div>
 
     <div class="plan-today">
       <div class="plan-today-head">
-        <span class="plan-today-badge">📅 今日（${WEEK_DAYS[tIdx]}）</span>
+        <span class="plan-today-badge">今日任务</span>
         <span class="plan-today-prog">${doneCount}/${todayItems.length} 已完成</span>
       </div>
       ${todayItems.length === 0
@@ -310,6 +397,15 @@ function renderEnPlan(container) {
     </div>
   `;
 
+  // 日期变更
+  container.querySelector('#m_start').onchange = (e) => {
+    const m = loadMeta(); m.startDate = e.target.value; saveMeta(m); renderEnPlan(container);
+  };
+  container.querySelector('#m_exam').onchange = (e) => {
+    const m = loadMeta(); m.examDate = e.target.value; saveMeta(m); renderEnPlan(container);
+  };
+  container.querySelector('#roadmapEditBtn').onclick = () => openRoadmapEdit(container);
+
   // 今日勾选（按日期记录，跨天自动重置）
   container.querySelectorAll('.plan-check input').forEach(cb => {
     cb.onchange = () => {
@@ -339,6 +435,26 @@ function renderEnPlan(container) {
   container.querySelectorAll('.plan-day-add').forEach(btn => {
     btn.onclick = () => openPlanAdd(container, Number(btn.dataset.day));
   });
+}
+
+function openRoadmapEdit(container) {
+  const meta = loadMeta();
+  openModal({
+    title: '编辑整体备考规划',
+    body: `
+      <div class="field"><label class="field-label">整体路线（可自由改写）</label>
+        <textarea class="textarea" id="r_text" style="min-height:300px" placeholder="写下你的整体备考规划…">${escapeHtml(meta.roadmap)}</textarea></div>
+      <div class="form-hint">支持多阶段、目标分、周节奏等；换行即分段。具体练习仍用你常用的学习 App。</div>`,
+    foot: `<button class="btn" id="r_cancel">取消</button><button class="btn btn-primary" id="r_save">保存</button>`
+  });
+  document.getElementById('r_cancel').onclick = closeModal;
+  document.getElementById('r_save').onclick = () => {
+    const text = document.getElementById('r_text').value;
+    const m = loadMeta(); m.roadmap = text; saveMeta(m);
+    closeModal();
+    renderEnPlan(container);
+    toast('已保存');
+  };
 }
 
 function openPlanAdd(container, day) {
