@@ -97,7 +97,8 @@ export function renderContentGen(container) {
 
   container.querySelectorAll('.step-item').forEach(el => {
     el.onclick = () => {
-      activeStep = parseInt(el.dataset.step);
+      const step = parseInt(el.dataset.step);
+      Storage.set('wechat_jump_step', step);
       renderContentGen(container);
     };
   });
@@ -684,13 +685,13 @@ function renderStep2(el, container) {
     };
   };
 
-  el.querySelector('#backStep1').onclick = () => { activeStep = 1; renderContentGen(container); };
+  el.querySelector('#backStep1').onclick = () => { Storage.set('wechat_jump_step', 1); renderContentGen(container); };
   el.querySelector('#nextStep3').onclick = () => {
     const content = contentInput.value.trim();
     if (!content) { toast('请先写一些内容'); return; }
     Storage.set('wechat_current_article', content);
     Storage.set('wechat_current_title', titleInput.value);
-    activeStep = 3;
+    Storage.set('wechat_jump_step', 3);
     renderContentGen(container);
   };
 }
@@ -1035,7 +1036,7 @@ function renderStep3(el, container) {
     };
   });
 
-  el.querySelector('#backStep2').onclick = () => { activeStep = 2; renderContentGen(container); };
+  el.querySelector('#backStep2').onclick = () => { Storage.set('wechat_jump_step', 2); renderContentGen(container); };
   el.querySelector('#finishBtn').onclick = () => {
     // 保存到文章库（wechat_drafts）
     const drafts = Storage.get(DRAFT_KEY, []);
@@ -1056,6 +1057,6 @@ function renderStep3(el, container) {
     toast('文章已保存到文章库！');
     // 跳转到文章库查看
     if (window.__wbNavigate) window.__wbNavigate('wechat-library');
-    else { activeStep = 1; renderContentGen(container); }
+    else { Storage.set('wechat_jump_step', 1); renderContentGen(container); }
   };
 }
