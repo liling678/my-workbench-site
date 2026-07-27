@@ -116,8 +116,10 @@ function openViewModal(a) {
           ${covers.map(c => `<img src="${escapeAttr(c.image)}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px">`).join('')}
         </div>
       ` : ''}
+      ${a.summary ? `<div style="background:rgba(15,110,86,0.06);border-left:3px solid var(--primary);padding:10px 12px;border-radius:6px;font-size:13px;line-height:1.7;margin-bottom:14px;white-space:pre-wrap">${escapeHtml(a.summary)}</div>` : ''}
       <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">${new Date(a.createdAt).toLocaleString()} · ${(a.content || '').length} 字</div>
       <div style="background:var(--bg-input);padding:14px;border-radius:8px;font-size:14px;line-height:1.8;max-height:500px;overflow-y:auto;white-space:pre-wrap">${escapeHtml(a.content || '(空)')}</div>
+      ${a.imgIdeas ? `<div style="margin-top:14px"><div style="font-size:13px;font-weight:600;color:var(--text-title);margin-bottom:6px">封面 / 配图建议</div><div style="background:var(--bg-input);padding:10px 12px;border-radius:8px;font-size:13px;line-height:1.7;white-space:pre-wrap">${escapeHtml(a.imgIdeas)}</div></div>` : ''}
     `,
     foot: `<button class="btn" id="lib_copy_modal">${Icons.copy} 复制全文</button><button class="btn btn-primary" id="lib_close_modal">关闭</button>`
   });
@@ -132,7 +134,10 @@ function loadIntoGenerator(a) {
   Storage.set('wechat_current_topic', a.topic || null);
   Storage.set('wechat_current_article', a.content || '');
   Storage.set('wechat_current_title', a.title || '');
+  Storage.set('wechat_current_summary', a.summary || '');
+  Storage.set('wechat_current_imgideas', a.imgIdeas || '');
   Storage.set('wechat_current_covers', a.covers || []);
+  Storage.set('wechat_jump_step', 2); // 直接进「写文章」步骤编辑
   toast('已载入，去「内容生成」继续编辑');
   if (window.__wbNavigate) window.__wbNavigate('wechat-gen');
 }

@@ -416,14 +416,21 @@ ${buildShuyuRules(p.author)}
 - 可以适当引用书中原话，但要夹在你自己的感受里，不要写成读书汇报。
 
 【输出格式】
-- 第一行是文章标题（不加"标题："前缀，不加书名号包裹整句标题）
+- 第一行直接输出文章最终标题（不加"标题："前缀，不加书名号包裹整句标题）
 - 空一行后输出正文
 - 段落之间空一行
 - 不要输出任何与文章无关的说明、注释或 markdown 符号（# * - 等）
+- 不要输出候选标题列表，第一行就是最终采用的标题
+- 直接采用最合适的标题进入正文，不要先列候选再写
 
-【本次生成提示】
-- 先生成标题候选并告知用户你将采用哪一个（默认直接采用候选 1，除非用户指定）。如果用户提供了选题，则先输出 10 个候选标题、推荐 3 个并说明理由，再进入正文。
-- 正文完成后，**额外输出一份 markdown 块**（用独立段落包裹）包含：①一句话摘要（≤50字）②朋友圈文案（≤100字）③封面画面建议（中文一句话）④各章节配图建议（中文一句话）`;
+【摘要与配图建议 · 运营辅助】
+正文写完后，在文章最末尾用下面这种带 === 包裹的格式追加一份运营辅助信息（这部分不是正文，会被系统自动提取并单独展示，请勿把正文内容放进来）：
+===摘要与配图建议===
+【一句话摘要】不超过50字的一句话摘要
+【朋友圈文案】不超过100字的朋友圈转发文案
+【封面画面建议】封面图的中文画面描述（一句话）
+【配图建议】各章节配图的中文建议（一句话或分条列出）
+===`;
 }
 
 function buildUserPrompt(topic, extra, variant) {
@@ -444,6 +451,8 @@ function renderStep2(el, container) {
   const topic = Storage.get('wechat_current_topic', null);
   const savedArticle = Storage.get('wechat_current_article', '');
   const savedTitle = Storage.get('wechat_current_title', topic?.title || '');
+  const savedSummary = Storage.get('wechat_current_summary', '');
+  const savedImgIdeas = Storage.get('wechat_current_imgideas', '');
   const aiReady = hasAiConfig();
   const cfg = loadAiConfig();
 
@@ -491,8 +500,17 @@ function renderStep2(el, container) {
         <label class="field-label">文章内容</label>
         <textarea class="textarea" id="article_content" style="min-height:400px;line-height:1.8" placeholder="点击「AI 生成文章」，文字会实时出现在这里；也可以直接手写或粘贴…">${escapeHtml(savedArticle)}</textarea>
       </div>
+      <div class="field">
+        <label class="field-label">摘要 / 朋友圈文案</label>
+        <textarea class="textarea" id="article_summary" style="min-height:90px;line-height:1.7" placeholder="AI 生成后会自动填入：一句话摘要 + 朋友圈转发文案，也可手动修改">${escapeHtml(savedSummary)}</textarea>
+      </div>
+      <div class="field">
+        <label class="field-label">封面 / 配图建议</label>
+        <textarea class="textarea" id="article_imgideas" style="min-height:90px;line-height:1.7" placeholder="AI 生成后会自动填入：封面画面建议 + 各章节配图建议，也可手动修改">${escapeHtml(savedImgIdeas)}</textarea>
+      </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-primary" id="saveDraftBtn">${Icons.edit} 保存草稿</button>
+        <button class="btn btn-accent" id="saveLibBtn">💾 保存至文章库</button>
         <button class="btn" id="copyArticleBtn">${Icons.copy} 复制全文</button>
         <div class="spacer" style="flex:1"></div>
         <button class="btn btn-sm" id="clearArticleBtn">清空内容</button>
@@ -508,8 +526,12 @@ function renderStep2(el, container) {
   // 自动保存
   const titleInput = el.querySelector('#article_title');
   const contentInput = el.querySelector('#article_content');
+  const summaryEl = el.querySelector('#article_summary');
+  const imgIdeasEl = el.querySelector('#article_imgideas');
   titleInput.addEventListener('input', () => Storage.set('wechat_current_title', titleInput.value));
   contentInput.addEventListener('input', () => Storage.set('wechat_current_article', contentInput.value));
+  summaryEl.addEventListener('input', () => Storage.set('wechat_current_summary', summaryEl.value));
+  imgIdeasEl.addEventListener('input', () => Storage.set('wechat_current_imgideas', imgIdeasEl.value));
 
   const genBtn = el.querySelector('#genArticleBtn');
   const regenBtn = el.querySelector('#regenArticleBtn');
@@ -529,17 +551,41 @@ function renderStep2(el, container) {
     statusEl.style.display = on ? 'block' : 'none';
   };
 
-  // 从AI输出中拆出标题（第一行）和正文
-  const splitTitleContent = (full) => {
-    const lines = full.split('\n');
+  // 从 AI 输出中解析：标题（第一行）、正文、以及末尾的「摘要与配图建议」块。
+  // 摘要与配图建议会被拆出来单独展示，绝不混进正文文本框。
+  const parseArticle = (full) => {
+    let summary = '';
+    let imgIdeas = '';
+    // 优先匹配 === 包裹的块
+    const blockRe = /===\s*摘要与配图建议\s*===([\s\S]*?)===/;
+    const m = full.match(blockRe);
+    let block = null, cleaned = full;
+    if (m) {
+      block = m[1];
+      cleaned = full.replace(blockRe, '').trim();
+    } else {
+      // 兜底：若模型没用 === 包裹，但末尾出现了摘要/配图标记，也把它从正文剥离
+      const fm = full.match(/\n[ \t]*(摘要与配图建议|【一句话摘要】|【摘要】)[\s\S]*$/);
+      if (fm) { block = fm[0].replace(/^\n[ \t]*/, ''); cleaned = full.slice(0, fm.index).trim(); }
+    }
+    if (block) {
+      const labels = ['一句话摘要', '朋友圈文案', '封面画面建议', '配图建议'];
+      const re = new RegExp('【?(' + labels.join('|') + ')】?\\s*([\\s\\S]*?)(?=【?(?:' + labels.join('|') + ')】?\\s*|$)', 'g');
+      const map = {};
+      let mm;
+      while ((mm = re.exec(block)) !== null) { map[mm[1]] = mm[2].trim(); }
+      summary = [map['一句话摘要'], map['朋友圈文案']].filter(Boolean).join('\n');
+      imgIdeas = [map['封面画面建议'], map['配图建议']].filter(Boolean).join('\n');
+    }
+    const lines = cleaned.split('\n');
     let title = '';
     let bodyStart = 0;
     for (let i = 0; i < lines.length; i++) {
       const l = lines[i].trim();
-      if (l) { title = l.replace(/^(标题[:：]\s*)/, '').replace(/^[《#\s]+|[》\s]+$/g, m => m.includes('《') || m.includes('》') ? m.replace(/[《》]/g, '') : ''); bodyStart = i + 1; break; }
+      if (l) { title = l.replace(/^(标题[:：]\s*)/, '').replace(/^[《#\s]+|[》\s]+$/g, '').trim(); bodyStart = i + 1; break; }
     }
     const content = lines.slice(bodyStart).join('\n').replace(/^\s+/, '');
-    return { title: title || (topic?.title || ''), content };
+    return { title: title || '', content, summary, imgIdeas };
   };
 
   // 核心生成函数
@@ -555,24 +601,38 @@ function renderStep2(el, container) {
         signal: currentAbort.signal,
         onDelta: (_d, all) => {
           if (replaceAll) {
-            const { title, content } = splitTitleContent(all);
+            const { title, content, summary, imgIdeas } = parseArticle(all);
             titleInput.value = title;
             contentInput.value = content;
+            if (summaryEl) summaryEl.value = summary;
+            if (imgIdeasEl) imgIdeasEl.value = imgIdeas;
           } else {
             contentInput.value = all;
           }
           contentInput.scrollTop = contentInput.scrollHeight;
         },
       });
-      const { title, content } = replaceAll ? splitTitleContent(full) : { title: titleInput.value, content: full };
-      titleInput.value = title;
-      contentInput.value = content;
-      Storage.set('wechat_current_title', title);
-      Storage.set('wechat_current_article', content);
+      if (replaceAll) {
+        const { title, content, summary, imgIdeas } = parseArticle(full);
+        titleInput.value = title;
+        contentInput.value = content;
+        if (summaryEl) summaryEl.value = summary;
+        if (imgIdeasEl) imgIdeasEl.value = imgIdeas;
+        Storage.set('wechat_current_title', title);
+        Storage.set('wechat_current_article', content);
+        Storage.set('wechat_current_summary', summary);
+        Storage.set('wechat_current_imgideas', imgIdeas);
+      } else {
+        titleInput.value = titleInput.value;
+        contentInput.value = full;
+        Storage.set('wechat_current_article', full);
+      }
       toast('生成完成，可以继续润色');
     } catch (e) {
       if (e.name === 'AbortError') {
         Storage.set('wechat_current_article', contentInput.value);
+        if (summaryEl) Storage.set('wechat_current_summary', summaryEl.value);
+        if (imgIdeasEl) Storage.set('wechat_current_imgideas', imgIdeasEl.value);
         toast('已停止生成');
       } else if (e.message === 'NO_CONFIG') {
         openAiConfigModal(() => renderStep2(el, container));
@@ -661,7 +721,29 @@ function renderStep2(el, container) {
   el.querySelector('#saveDraftBtn').onclick = () => {
     Storage.set('wechat_current_title', titleInput.value);
     Storage.set('wechat_current_article', contentInput.value);
+    Storage.set('wechat_current_summary', summaryEl.value);
+    Storage.set('wechat_current_imgideas', imgIdeasEl.value);
     toast('草稿已保存');
+  };
+
+  // 保存至文章库（不清除当前编辑状态，可反复保存）
+  el.querySelector('#saveLibBtn').onclick = () => {
+    const titleVal = titleInput.value.trim() || '未命名文章';
+    const contentVal = contentInput.value.trim();
+    if (!contentVal) { toast('请先写一些内容再保存'); return; }
+    const drafts = Storage.get(DRAFT_KEY, []);
+    drafts.unshift({
+      id: Storage.uid(),
+      title: titleVal,
+      content: contentVal,
+      summary: summaryEl.value.trim(),
+      imgIdeas: imgIdeasEl.value.trim(),
+      covers: Storage.get('wechat_current_covers', []),
+      aiChecks: Storage.get('wechat_ai_check_history', []),
+      createdAt: Date.now(),
+    });
+    Storage.set(DRAFT_KEY, drafts);
+    toast('已保存到文章库 ✅');
   };
 
   el.querySelector('#copyArticleBtn').onclick = () => {
@@ -1044,6 +1126,8 @@ function renderStep3(el, container) {
       id: Storage.uid(),
       title: title || '未命名文章',
       content: article,
+      summary: Storage.get('wechat_current_summary', ''),
+      imgIdeas: Storage.get('wechat_current_imgideas', ''),
       covers: Storage.get('wechat_current_covers', []),
       aiChecks: Storage.get('wechat_ai_check_history', []),
       createdAt: Date.now(),
@@ -1053,6 +1137,8 @@ function renderStep3(el, container) {
     Storage.set('wechat_current_topic', null);
     Storage.set('wechat_current_article', '');
     Storage.set('wechat_current_title', '');
+    Storage.set('wechat_current_summary', '');
+    Storage.set('wechat_current_imgideas', '');
     Storage.set('wechat_current_covers', []);
     toast('文章已保存到文章库！');
     // 跳转到文章库查看

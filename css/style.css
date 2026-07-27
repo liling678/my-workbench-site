@@ -499,6 +499,7 @@ input, textarea, select { font-family: inherit; }
 }
 .btn:active { opacity: 0.7; }
 .btn-primary { background: var(--primary); color: white; border-color: var(--primary); }
+.btn-accent { background: var(--primary-bg); color: var(--primary); border-color: var(--primary-light); font-weight: 600; }
 .btn-sm { padding: 5px 10px; font-size: 12px; }
 .btn-danger { color: var(--red); border-color: var(--red); }
 .btn svg { width: 14px; height: 14px; }
