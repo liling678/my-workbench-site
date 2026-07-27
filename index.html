@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>栗圆圆的工作台</title>
+  <meta name="theme-color" content="#0F6E56">
+  <meta name="description" content="栗圆圆的个人云端工作台">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/favicon.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="工作台">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <header class="topbar">
+    <button class="topbar-menu" id="menuBtn" aria-label="菜单">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="3" y1="6" x2="21" y2="6"/>
+        <line x1="3" y1="12" x2="21" y2="12"/>
+        <line x1="3" y1="18" x2="21" y2="18"/>
+      </svg>
+    </button>
+    <div class="topbar-title" id="topbarTitle">每日计划</div>
+    <div class="topbar-right">
+      <div class="topbar-avatar" id="topbarAvatar">圆</div>
+    </div>
+  </header>
+
+  <div class="overlay" id="overlay"></div>
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-avatar">圆</div>
+      <div class="sidebar-user">
+        <div class="sidebar-name">栗圆圆</div>
+        <div class="sidebar-sub">个人工作台</div>
+      </div>
+    </div>
+    <nav class="sidebar-nav" id="sidebarNav"></nav>
+    <div class="sidebar-footer">
+      <button class="sidebar-foot-btn" id="exportBtn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        导出数据
+      </button>
+      <button class="sidebar-foot-btn" id="importBtn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        导入数据
+      </button>
+      <button class="sidebar-foot-btn" id="syncBtn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-6.7-3"/><path d="M3 12a9 9 0 0 1 9-9 9 9 0 0 1 6.7 3"/><polyline points="21 3 21 9 15 9"/><polyline points="3 21 3 15 9 15"/></svg>
+        云同步
+      </button>
+    </div>
+  </aside>
+
+  <main class="content" id="content"></main>
+
+</div>
+
+<div class="modal-root" id="modalRoot"></div>
+<div class="toast-root" id="toastRoot"></div>
+
+<!-- 安装到桌面引导条 -->
+<div id="installBanner" class="install-banner" style="display:none">
+  <div class="install-banner-icon">📲</div>
+  <div class="install-banner-text">
+    <div class="install-banner-title">安装到手机桌面</div>
+    <div class="install-banner-hint" id="installHint">像 App 一样随时打开使用</div>
+  </div>
+  <button class="install-banner-btn" id="installBtn">安装</button>
+  <button class="install-banner-close" id="installClose" aria-label="关闭">✕</button>
+</div>
+
+  <script type="module" src="js/app.js"></script>
+
+<script>
+  // 注册 Service Worker（离线 + 可安装）
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      const hadController = !!navigator.serviceWorker.controller; // 已装过旧版才需要刷新
+      let reloaded = false;
+      navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' })
+        .then((reg) => {
+          if (reg.update) reg.update(); // 主动检查更新，绕过浏览器惰性与 HTTP 缓存
+          window.addEventListener('online', () => reg.update && reg.update());
+          // 新 SW 接管页面时自动刷新一次，拿到最新内容（仅更新场景，首次安装不误刷）
+          navigator.serviceWorker.addEventListener('controllerchange', () => {
+            if (hadController && !reloaded) {
+              reloaded = true;
+              window.location.reload();
+            }
+          });
+        })
+        .catch((e) => console.warn('SW 注册失败:', e));
+    });
+  }
+
+  // 安装引导：Android 用 beforeinstallprompt；iOS Safari 给手动提示
+  (function () {
+    const banner = document.getElementById('installBanner');
+    const hint = document.getElementById('installHint');
+    const btn = document.getElementById('installBtn');
+    const close = document.getElementById('installClose');
+    if (!banner) return;
+
+    const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    const standalone = window.matchMedia('(display-mode: standalone)').matches
+      || window.navigator.standalone === true;
+
+    let deferredPrompt = null;
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      banner.style.display = 'flex';
+    });
+
+    if (isIos && isSafari && !standalone) {
+      hint.textContent = '点浏览器底部「分享」→「添加到主屏幕」即可装到桌面';
+      banner.style.display = 'flex';
+    }
+
+    if (btn) btn.onclick = async () => {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        await deferredPrompt.userChoice;
+        deferredPrompt = null;
+        banner.style.display = 'none';
+      }
+    };
+    if (close) close.onclick = () => { banner.style.display = 'none'; };
+  })();
+</script>
+</body>
+</html>
