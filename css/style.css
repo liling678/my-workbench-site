@@ -1414,3 +1414,20 @@ input, textarea, select { font-family: inherit; }
 @media (max-width: 560px) {
   .prep-grid { grid-template-columns: 1fr; }
 }
+
+/* 雅思模块补充样式 */
+.tabs-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.tabs-scroll .tab { flex: 0 0 auto; padding: 8px 14px; white-space: nowrap; }
+.daily-plan {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  background: linear-gradient(135deg, var(--primary) 0%, #149a76 100%); color: #fff;
+  border-radius: var(--radius-lg); padding: 14px 16px; margin-bottom: 10px;
+}
+.daily-plan-left { min-width: 0; }
+.daily-plan-title { font-size: 15px; font-weight: 600; }
+.daily-plan-sub { font-size: 13px; opacity: 0.92; margin-top: 2px; }
+.daily-plan-sub b { font-size: 16px; }
+.daily-plan-btn { background: #fff; color: var(--primary); border: none; }
+.daily-ebb { font-size: 12px; color: var(--text-muted); margin-bottom: 14px; line-height: 1.6; }
+.import-block { background: var(--bg-input); border-radius: 10px; padding: 12px; }
+.import-hint { font-size: 12px; color: var(--text-muted); line-height: 1.6; margin-top: 6px; }
