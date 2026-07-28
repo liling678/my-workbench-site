@@ -3,11 +3,20 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v22';
+export const APP_VERSION = 'v23';
 export const APP_DATE = '2026-07-28';
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v23', date: '2026-07-28',
+    items: [
+      '修复英语学习顶部日期/倒计时框在手机端被旧进度条样式压缩为 6px、文字显示不完整的问题',
+      '新增考公学习模块「为人民服务」：资深考公老师设计的 12 周在职备考路线，覆盖行测、申论、常识与时政',
+      '考公模块内置周一到周日训练模板，每天按真实日期自动显示今日任务并支持完成打卡',
+      '支持设置开始日期/考试日期、自动显示备考天数与倒计时；整体路线和每日任务均可手动编辑、增删及调整星期',
+    ],
+  },
   {
     version: 'v22', date: '2026-07-28',
     items: [

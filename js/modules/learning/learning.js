@@ -4,8 +4,10 @@ import { Storage } from '../../storage.js';
 import { openModal, closeModal, confirmDialog, toast, fmtDate, escapeHtml } from '../../ui.js';
 
 const TAROT_KEY = 'learning_tarot';
-const EN_PLAN_KEY = 'english_study_plan';     // 每周学习计划（按星期几安排）
+const EN_PLAN_KEY = 'english_study_plan';      // 每周学习计划（按星期几安排）
 const EN_META_KEY = 'english_plan_meta';       // { startDate, examDate, roadmap }
+const CIVIL_PLAN_KEY = 'civil_service_study_plan';
+const CIVIL_META_KEY = 'civil_service_plan_meta';
 
 function loadTarot() { return Storage.get(TAROT_KEY, []); }
 function saveTarot(d) { Storage.set(TAROT_KEY, d); }
@@ -15,6 +17,12 @@ function loadMeta() {
   return Storage.get(EN_META_KEY, { startDate: todayStr(), examDate: '', roadmap: DEFAULT_ROADMAP });
 }
 function saveMeta(d) { Storage.set(EN_META_KEY, d); }
+function loadCivilPlan() { return Storage.get(CIVIL_PLAN_KEY, []); }
+function saveCivilPlan(d) { Storage.set(CIVIL_PLAN_KEY, d); }
+function loadCivilMeta() {
+  return Storage.get(CIVIL_META_KEY, { startDate: todayStr(), examDate: '', roadmap: DEFAULT_CIVIL_ROADMAP });
+}
+function saveCivilMeta(d) { Storage.set(CIVIL_META_KEY, d); }
 
 const TAROT_TABS = [
   { id: 'cards', name: '牌义笔记' },
@@ -53,6 +61,38 @@ const SEED_WEEK = [
   ['周复盘 + 口语 Part3 辩证表达', '休息调整'],
 ];
 
+// 在职考公 12 周备考路线：先建体系，再专项提速，最后套卷冲刺
+const DEFAULT_CIVIL_ROADMAP = `【在职考公整体规划】（以 12 周为例，可按考试日期调整）
+阶段一 · 基础建体系（第 1–4 周）
+· 行测：系统学言语、判断、资料分析三大提分模块；数量关系先掌握高频题型
+· 申论：学习归纳概括、综合分析、提出对策的答题结构，每周精改 2 道小题
+· 常识与时政：每天 15–20 分钟积累，不占用大块黄金时间
+· 工作日约 2 小时，周末约 3–4 小时
+
+阶段二 · 专项提速（第 5–8 周）
+· 行测按模块计时刷题：言语 35 分钟、判断 35 分钟、资料 30 分钟，建立取舍顺序
+· 每日整理错题原因：知识盲点 / 审题错误 / 速度不足 / 计算失误
+· 申论每周完成 1 套小题 + 1 篇大作文，重点练材料提炼与规范表达
+· 每周日复盘正确率、速度和薄弱模块，下周任务向短板倾斜
+
+阶段三 · 套卷冲刺（第 9–12 周）
+· 每周至少 2 套行测、1 套申论，严格按真实考试时间完成
+· 行测形成固定做题顺序与放弃策略，目标是在限时内拿到更多确定分
+· 申论沉淀 5–8 个高质量主题素材与自己的开头、过渡、结尾表达
+· 考前一周回归错题、时政和作息，不盲目刷新题
+
+老师原则：先正确再提速，先三大模块再数量常识；刷题必须复盘；申论答案必须回到材料；每周保留半天休息，长期稳定比短期猛冲更重要。`;
+
+const SEED_CIVIL_WEEK = [
+  ['言语理解专项 30 题（限时+复盘）', '申论归纳概括 1 题', '时政积累 15 分钟'],
+  ['判断推理专项 30 题', '资料分析速算技巧 30 分钟', '整理当天错题'],
+  ['资料分析 4 篇（计时）', '申论综合分析 1 题', '常识判断 20 题'],
+  ['言语理解混合题 30 题', '数量关系高频题型 10 题', '复盘错题与公式'],
+  ['判断推理混合题 30 题', '申论提出对策 1 题', '本周时政回顾'],
+  ['行测分模块套题 1 套（严格计时）', '逐题复盘并统计正确率/用时', '申论大作文列提纲 1 篇'],
+  ['申论小题套题 1 套', '本周错题二刷 + 下周目标', '休息半天，保持状态'],
+];
+
 let tarotTab = 'cards';
 
 function todayIdx() { return (new Date().getDay() + 6) % 7; } // 周一=0 … 周日=6
@@ -80,6 +120,19 @@ function ensureSeed() {
   const meta = loadMeta();
   if (!meta.roadmap) { meta.roadmap = DEFAULT_ROADMAP; saveMeta(meta); }
   if (!meta.startDate) { meta.startDate = todayStr(); saveMeta(meta); }
+}
+
+function ensureCivilSeed() {
+  if (loadCivilPlan().length === 0) {
+    const list = [];
+    SEED_CIVIL_WEEK.forEach((arr, day) => arr.forEach(text => {
+      list.push({ id: Storage.uid(), day, text, doneDates: [] });
+    }));
+    saveCivilPlan(list);
+  }
+  const meta = loadCivilMeta();
+  if (!meta.roadmap) { meta.roadmap = DEFAULT_CIVIL_ROADMAP; saveCivilMeta(meta); }
+  if (!meta.startDate) { meta.startDate = todayStr(); saveCivilMeta(meta); }
 }
 
 export function initLearning() {
@@ -120,6 +173,13 @@ export function initLearning() {
     title: '英语学习',
     icon: Icons.grad,
     render(container) { ensureSeed(); renderEnPlan(container); }
+  });
+
+  registerModule('learning-civil-service', {
+    section: 'learning',
+    title: '为人民服务',
+    icon: Icons.target,
+    render(container) { ensureCivilSeed(); renderCivilPlan(container); }
   });
 }
 
@@ -478,6 +538,191 @@ function openPlanAdd(container, day) {
     closeModal();
     renderEnPlan(container);
     toast('已添加');
+  };
+}
+
+// ===================== 为人民服务 · 考公每日计划 =====================
+function renderCivilPlan(container) {
+  const items = loadCivilPlan();
+  const meta = loadCivilMeta();
+  const tIdx = todayIdx();
+  const tStr = todayStr();
+  const todayItems = items.filter(i => i.day === tIdx);
+  const doneCount = todayItems.filter(i => (i.doneDates || []).includes(tStr)).length;
+
+  const progressBits = [`📅 今日（${WEEK_DAYS[tIdx]}）`];
+  const dayFromStart = daysBetween(meta.startDate, tStr);
+  if (dayFromStart !== null) {
+    if (dayFromStart >= 0) {
+      progressBits.push(`备考第 ${dayFromStart + 1} 天`);
+      progressBits.push(`第 ${Math.floor(dayFromStart / 7) + 1} 周`);
+    } else {
+      progressBits.push(`还有 ${-dayFromStart} 天开始`);
+    }
+  }
+  const toExam = daysBetween(tStr, meta.examDate);
+  if (toExam !== null) progressBits.push(toExam >= 0 ? `距考试 ${toExam} 天` : '考试已过期');
+
+  container.innerHTML = `
+    <div class="page-head">
+      <div class="page-title">为人民服务 · 考公计划</div>
+      <div class="page-desc">在职备考路线：行测打基础、申论练表达、套卷提速度；每日自动更新，也可随时调整</div>
+    </div>
+
+    <div class="plan-progress civil-progress">${progressBits.join(' · ')}</div>
+
+    <div class="plan-meta">
+      <label class="plan-meta-field">开始日期
+        <input type="date" class="input" id="c_start" value="${escapeAttr(meta.startDate)}">
+      </label>
+      <label class="plan-meta-field">考试日期
+        <input type="date" class="input" id="c_exam" value="${escapeAttr(meta.examDate)}">
+      </label>
+      <button class="btn plan-meta-edit" id="civilRoadmapEdit">${Icons.edit} 编辑整体规划</button>
+    </div>
+
+    <div class="plan-overview civil-overview">
+      <div class="plan-overview-head">🏛️ 整体备考规划</div>
+      <div class="plan-overview-body">${escapeHtml(meta.roadmap)}</div>
+    </div>
+
+    <div class="plan-today civil-today">
+      <div class="plan-today-head">
+        <span class="plan-today-badge">今日任务</span>
+        <span class="plan-today-prog">${doneCount}/${todayItems.length} 已完成</span>
+      </div>
+      ${todayItems.length === 0
+        ? `<div class="plan-today-empty">今天还没安排，去下方给「${WEEK_DAYS[tIdx]}」添加学习任务吧</div>`
+        : todayItems.map(i => `
+          <label class="plan-check ${(i.doneDates || []).includes(tStr) ? 'on' : ''}">
+            <input type="checkbox" data-id="${i.id}" ${(i.doneDates || []).includes(tStr) ? 'checked' : ''}>
+            <span>${escapeHtml(i.text)}</span>
+          </label>`).join('')}
+    </div>
+
+    <div class="plan-week">
+      ${WEEK_DAYS.map((name, idx) => {
+        const dayItems = items.filter(i => i.day === idx);
+        return `
+          <div class="plan-day ${idx === tIdx ? 'is-today' : ''}">
+            <div class="plan-day-head">
+              <span class="plan-day-name">${name}</span>
+              ${idx === tIdx ? '<span class="plan-day-tag">今天</span>' : ''}
+              <button class="icon-btn btn-sm civil-day-add" data-day="${idx}" title="添加任务">${Icons.plus}</button>
+            </div>
+            <div class="plan-day-list">
+              ${dayItems.length === 0
+                ? '<div class="plan-day-none">—</div>'
+                : dayItems.map(i => `
+                  <div class="plan-day-item">
+                    <span>${escapeHtml(i.text)}</span>
+                    <div class="plan-day-actions">
+                      <button class="plan-day-edit civil-task-edit" data-id="${i.id}" title="编辑">${Icons.edit}</button>
+                      <button class="plan-day-del civil-task-del" data-id="${i.id}" title="删除">${Icons.trash}</button>
+                    </div>
+                  </div>`).join('')}
+            </div>
+          </div>`;
+      }).join('')}
+    </div>
+  `;
+
+  container.querySelector('#c_start').onchange = (e) => {
+    const m = loadCivilMeta(); m.startDate = e.target.value; saveCivilMeta(m); renderCivilPlan(container);
+  };
+  container.querySelector('#c_exam').onchange = (e) => {
+    const m = loadCivilMeta(); m.examDate = e.target.value; saveCivilMeta(m); renderCivilPlan(container);
+  };
+  container.querySelector('#civilRoadmapEdit').onclick = () => openCivilRoadmapEdit(container);
+
+  container.querySelectorAll('.plan-check input').forEach(cb => {
+    cb.onchange = () => {
+      const list = loadCivilPlan();
+      const item = list.find(x => x.id === cb.dataset.id);
+      if (!item) return;
+      item.doneDates = item.doneDates || [];
+      if (cb.checked) {
+        if (!item.doneDates.includes(tStr)) item.doneDates.push(tStr);
+      } else {
+        item.doneDates = item.doneDates.filter(d => d !== tStr);
+      }
+      saveCivilPlan(list);
+      renderCivilPlan(container);
+    };
+  });
+
+  container.querySelectorAll('.civil-day-add').forEach(btn => {
+    btn.onclick = () => openCivilTaskForm(container, null, Number(btn.dataset.day));
+  });
+  container.querySelectorAll('.civil-task-edit').forEach(btn => {
+    btn.onclick = () => openCivilTaskForm(container, btn.dataset.id);
+  });
+  container.querySelectorAll('.civil-task-del').forEach(btn => {
+    btn.onclick = async () => {
+      if (await confirmDialog({ title: '删除任务', message: '确定删除这条考公学习任务吗？', confirmText: '删除', danger: true })) {
+        saveCivilPlan(loadCivilPlan().filter(x => x.id !== btn.dataset.id));
+        renderCivilPlan(container);
+        toast('已删除');
+      }
+    };
+  });
+}
+
+function openCivilRoadmapEdit(container) {
+  const meta = loadCivilMeta();
+  openModal({
+    title: '编辑考公整体规划',
+    body: `
+      <div class="field"><label class="field-label">整体备考路线</label>
+        <textarea class="textarea" id="civil_roadmap" style="min-height:320px" placeholder="写下阶段目标、时间安排和复盘规则…">${escapeHtml(meta.roadmap)}</textarea></div>
+      <div class="form-hint">可以根据国考、省考、选调或事业单位考试时间，自由调整阶段长度与学习强度。</div>`,
+    foot: `<button class="btn" id="civil_roadmap_cancel">取消</button><button class="btn btn-primary" id="civil_roadmap_save">保存</button>`
+  });
+  document.getElementById('civil_roadmap_cancel').onclick = closeModal;
+  document.getElementById('civil_roadmap_save').onclick = () => {
+    const m = loadCivilMeta();
+    m.roadmap = document.getElementById('civil_roadmap').value;
+    saveCivilMeta(m);
+    closeModal();
+    renderCivilPlan(container);
+    toast('整体规划已保存');
+  };
+}
+
+function openCivilTaskForm(container, id, defaultDay = 0) {
+  const list = loadCivilPlan();
+  const item = id ? list.find(x => x.id === id) : null;
+  const isEdit = !!item;
+  const selectedDay = isEdit ? item.day : defaultDay;
+  openModal({
+    title: isEdit ? '编辑考公任务' : `添加任务 · ${WEEK_DAYS[selectedDay]}`,
+    body: `
+      <div class="field"><label class="field-label">安排到</label>
+        <select class="select" id="civil_task_day">
+          ${WEEK_DAYS.map((name, idx) => `<option value="${idx}" ${idx === selectedDay ? 'selected' : ''}>${name}</option>`).join('')}
+        </select></div>
+      <div class="field"><label class="field-label">学习任务 <span class="req">*</span></label>
+        <textarea class="textarea" id="civil_task_text" style="min-height:100px" placeholder="如：资料分析 4 篇（计时并复盘）" autofocus>${escapeHtml(item?.text || '')}</textarea></div>
+      <div class="form-hint">新增时可每行填写一条；编辑时可同时更换星期。</div>`,
+    foot: `<button class="btn" id="civil_task_cancel">取消</button><button class="btn btn-primary" id="civil_task_save">保存</button>`
+  });
+  document.getElementById('civil_task_cancel').onclick = closeModal;
+  document.getElementById('civil_task_save').onclick = () => {
+    const raw = document.getElementById('civil_task_text').value.trim();
+    if (!raw) { toast('请填写学习任务'); return; }
+    const day = Number(document.getElementById('civil_task_day').value);
+    if (isEdit) {
+      item.day = day;
+      item.text = raw.replace(/\n+/g, ' / ');
+    } else {
+      raw.split('\n').map(s => s.trim()).filter(Boolean).forEach(text => {
+        list.push({ id: Storage.uid(), day, text, doneDates: [] });
+      });
+    }
+    saveCivilPlan(list);
+    closeModal();
+    renderCivilPlan(container);
+    toast(isEdit ? '任务已更新' : '任务已添加');
   };
 }
 
