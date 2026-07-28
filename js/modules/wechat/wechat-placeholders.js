@@ -6,6 +6,7 @@ import { renderContentGen } from './content-gen.js';
 import { renderBenchmark } from './benchmark-articles.js';
 import { renderArticleLibrary } from './article-library.js';
 import { renderImageLibrary } from './image-library.js';
+import { initTypeset } from './typeset.js';
 
 export function initWechatPlaceholders() {
   // 风格画像
@@ -55,5 +56,8 @@ export function initWechatPlaceholders() {
     icon: Icons.camera,
     render: renderImageLibrary
   });
+
+  // 公众号排版（文章+配图 → 自动排版 → 复制内联样式HTML）
+  initTypeset();
 }
 

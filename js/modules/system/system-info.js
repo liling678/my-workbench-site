@@ -3,11 +3,20 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v23';
+export const APP_VERSION = 'v24';
 export const APP_DATE = '2026-07-28';
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v24', date: '2026-07-28',
+    items: [
+      '新增「公众号排版」模块：给文章+配图自动排版成手机阅读样式，一键复制可粘贴到公众号/秀米的内联样式 HTML',
+      '支持从文章库载入文章与配图，或空白粘贴；配图可来自图片库、本地上传或网址，可排序/加图注',
+      '正文支持轻量标记：# 小标题、> 引用、--- 分隔、【图】在指定位置插入配图；「智能穿插」自动分布配图',
+      '4 套排版主题（文艺绿/米白/深夜蓝/治愈粉），手机预览实时所见即所得；可保存排版模板复用',
+    ],
+  },
   {
     version: 'v23', date: '2026-07-28',
     items: [
