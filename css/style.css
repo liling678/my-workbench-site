@@ -1433,3 +1433,14 @@ input, textarea, select { font-family: inherit; }
   .ts-phone { width: 100%; max-width: 360px; }
   .ts-phone-screen { min-height: 460px; max-height: 60vh; }
 }
+
+/* 爆款选题 — 实时热榜预览 */
+.tt-live-trends { background: var(--bg-input); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; }
+.tt-trends-empty { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+.tt-trends-head { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--text-title); font-weight: 600; margin-bottom: 8px; flex-wrap: wrap; gap: 4px; }
+.tt-trends-meta { font-weight: 400; color: var(--text-muted); }
+.tt-trends-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.tt-trend-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-body); background: var(--bg-card); border: 0.5px solid var(--border); border-radius: 16px; padding: 5px 10px; max-width: 100%; }
+.tt-trend-chip span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tt-trend-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.badge-green { background: rgba(15, 110, 86, 0.10); color: var(--primary); border: 0.5px solid rgba(15, 110, 86, 0.25); }

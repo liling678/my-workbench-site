@@ -7,10 +7,13 @@ import { hasAiConfig, aiChatStream, openAiConfigModal } from '../../ai-service.j
 
 const GEN_KEY = 'wechat_topic_gen_history';       // 爆款选题生成历史
 const DECONSTRUCT_KEY = 'wechat_topic_deconstructs'; // 拆解历史
+const TREND_CACHE_KEY = 'wechat_topic_trends_cache'; // 实时热榜缓存（选题生成专用）
+const TREND_CACHE_TTL = 10 * 60 * 1000;             // 10 分钟
 
 let activeTab = 'gen';   // 'gen' | 'deconstruct'
 let genAbort = null;
 let decAbort = null;
+let cachedTrends = Storage.get(TREND_CACHE_KEY, null); // 内存级缓存
 
 function escapeAttr(s) {
   if (s == null) return '';
@@ -39,55 +42,89 @@ function scoreColor(s) {
   return 'var(--red)';
 }
 
+// ===== 实时热榜拉取（与 hot-search.js 同源，避免跨域问题） =====
+const TREND_SOURCES = [
+  { name: '微博', url: 'https://60s-api.viki.moe/v2/weibo' },
+  { name: '知乎', url: 'https://60s-api.viki.moe/v2/zhihu' },
+  { name: '头条', url: 'https://60s-api.viki.moe/v2/toutiao' },
+];
+
+async function fetchRealTimeTrends(force = false) {
+  if (!force && cachedTrends && cachedTrends.items && cachedTrends.items.length && (Date.now() - cachedTrends.ts) < TREND_CACHE_TTL) {
+    return cachedTrends.items;
+  }
+  const results = await Promise.allSettled(
+    TREND_SOURCES.map(async src => {
+      const resp = await fetch(src.url, { signal: AbortSignal.timeout(8000) });
+      const json = await resp.json();
+      if (json.code !== 200 || !Array.isArray(json.data)) throw new Error('bad data');
+      return json.data.slice(0, 20).map(item => ({
+        title: item.title || '',
+        hot: item.hot_value || 0,
+        link: item.link || item.url || '',
+        source: src.name,
+      })).filter(x => x.title);
+    })
+  );
+  const items = results.filter(r => r.status === 'fulfilled').flatMap(r => r.value);
+  if (items.length) {
+    cachedTrends = { ts: Date.now(), items };
+    Storage.set(TREND_CACHE_KEY, cachedTrends);
+  }
+  return items;
+}
+
+function fmtHot(n) {
+  if (!n) return '';
+  if (n >= 10000) return (n / 10000).toFixed(1) + '万';
+  return String(n);
+}
+
 // ===== AI 提示词 =====
 
-// 爆款选题生成器：整合自用户提供的「资深运营专家」设定
+// 爆款选题生成器：基于真实实时热榜 + 账号风格，避免凭空编造
 function buildTopicGenSystem() {
   return `# 爆款选题生成器 AI 设定
 
-你是一名资深微信公众号运营专家，拥有多年女性成长、读书类账号运营经验。
-你的任务不是简单提供文章主题，而是挖掘："什么内容会让目标读者主动点击、收藏、转发。"
+你是一名资深微信公众号运营专家，擅长把「当下真实热点」转化成「读书 + 女性成长」账号的爆款选题。
+
+【核心规则】
+- 严禁凭空编造选题。必须优先从用户提供的「实时热榜」中提炼选题角度。
+- 如果热榜中没有直接相关条目，要从热榜的「情绪、社会心理、时代情绪」中延伸，不能回到老模板。
+- 每次生成都要让读者感到："这是今天发生的事/今天大家都在聊的，她居然用书里的观点解释了。"
 
 【账号定位】读书 + 女性成长 + 人生感悟
-【目标读者】25-45岁的女性。她们正在经历：职场压力、年龄焦虑、自我怀疑、情绪内耗、亲密关系困惑、想改变却不知道如何开始、想提升自己但缺少方向。
-【选题核心】不是讲书，而是：一本书 → 一个人生困惑 → 一种情绪共鸣 → 一次自我成长。
+【目标读者】25-45岁女性，正经历：职场压力、年龄焦虑、情绪内耗、亲密关系困惑、自我怀疑、想改变但缺方向。
+【选题公式】一本书 → 一个当下热点/情绪 → 一次自我成长/共鸣。
 
 【选题挖掘原则】每个选题必须回答：
-1. 为什么读者现在需要看？
-2. 她正在经历什么痛点？
+1. 为什么读者现在需要看？（结合哪个真实热点/情绪）
+2. 她正在经历什么具体痛点？
 3. 她为什么愿意转发给朋友？
-4. 这个话题是否具有长期搜索价值？
-优先选择高情绪价值主题：后悔、遗憾、孤独、成长、和自己和解、被误解、自我接纳、改变人生、女性觉醒、摆脱内耗。
+4. 这个话题有没有长期搜索价值？
 
-【6大方向】
-1. 读书成长类：读完《书名》，我终于明白了XXX
-2. 女性成长类：普通女性如何变得更好
-3. 情绪疗愈类：读者内心隐藏的痛苦
-4. 人生感悟类：成年人共同经历
-5. 自我提升类：改变行动
-6. 热点结合类：社会情绪热点 + 女性成长 + 书籍观点
-
-【爆款标题结构（优先使用）】
-- 读完《XXX》，我终于明白了XXX
-- 人到XX岁才发现，XXX
-- 那个曾经XXX的自己，终于被我原谅了
-- 真正厉害的女人，都懂得XXX
-- 停止XXX后，我的人生开始改变
-- 看完XXX，我想告诉所有女人XXX
-
-【选题筛选原则】
-不要生成：太普通的话题（如何读一本书）、过度鸡汤（努力的人一定成功）、没有具体痛点的话题。
-只优先生成让目标读者看到标题就产生："这不就是我吗？""我要看看她怎么说。""我要转给朋友。"
+【严禁】
+- 不要再用"人到30岁才发现""真正厉害的女人都懂得"这类固定标题模板。
+- 不要生成"如何读一本书""努力的人一定成功"这类空泛鸡汤。
+- 不要每次重复同样的 6 大方向和 6 个标题结构。
 
 【评分标准】点击欲望(30) + 情绪共鸣(30) + 转发价值(20) + 长期价值(20) = 100分。只推荐80分以上选题。
 
 【输出格式】只输出一个 JSON 数组，不要任何说明文字、不要 markdown 代码块标记。数组每个元素形如：
-{"no":"01","topic":"为什么越懂事的人，越容易疲惫？","pain":"长期压抑自己、不敢拒绝别人","reader":"30岁左右的职场女性，习惯性讨好","book":"《被讨厌的勇气》","title":"《被讨厌的勇气》告诉我：真正成熟的人，都学会了拒绝","score":92}
+{"no":"01","topic":"为什么越懂事的人，越容易疲惫？","pain":"长期压抑自己、不敢拒绝别人","reader":"30岁左右的职场女性，习惯性讨好","book":"《被讨厌的勇气》","title":"《被讨厌的勇气》告诉我：真正成熟的人，都学会了拒绝","score":92,"trend":"源自微博热榜："。}
+- trend 字段必填：写明灵感来自哪条真实热榜，格式如"源自微博热榜：XXX"或"源自知乎热榜：XXX"。
+- 如果同一条热榜衍生出多个选题，trend 可以相同，但 topic/title 必须不同。
 请生成 20 个选题，按爆款评分从高到低排序。`;
 }
 
-function buildTopicGenUser(focus) {
-  let s = '请生成今日推荐的 20 个爆款选题（JSON 数组）。';
+function buildTopicGenUser(focus, trendsText) {
+  let s = '';
+  if (trendsText && trendsText.trim()) {
+    s += `【实时热榜】以下是从微博/知乎/头条拉取的当下真实热门话题（按热度排序）：\n${trendsText.trim()}\n\n`;
+    s += '请基于以上真实热榜，生成 20 个高情绪价值的爆款选题。优先从热榜中找角度，不要凭空编造。';
+  } else {
+    s += '未获取到实时热榜，请基于当下社会情绪和女性成长读书号调性，生成 20 个不重复、有新鲜感的爆款选题。';
+  }
   if (focus && focus.trim()) {
     s += `\n\n请重点围绕用户指定的方向/关键词来生成：${focus.trim()}（可融入但不必局限于此，保持账号整体调性）。`;
   }
@@ -134,10 +171,31 @@ export function renderTopicTools(container) {
   else renderDeconstructTab(contentEl, container);
 }
 
+// 渲染实时热榜预览条
+function renderTrendsPreview(trends) {
+  if (!trends || trends.length === 0) {
+    return `<div class="tt-trends-empty">⏳ 尚未加载实时热榜，点「刷新热榜」或「生成选题」时自动拉取</div>`;
+  }
+  const list = trends.slice(0, 8).map((t, i) => `
+    <span class="tt-trend-chip" title="${escapeAttr(t.source + (t.hot ? ' · ' + fmtHot(t.hot) : ''))}">
+      <span class="tt-trend-dot" style="background:${t.source === '微博' ? '#E6162D' : t.source === '知乎' ? '#0084FF' : '#F04142'}"></span>
+      ${escapeHtml(t.title)}
+    </span>
+  `).join('');
+  return `
+    <div class="tt-trends-head">
+      <span>🔥 已接入实时热榜（展示前 8 条）</span>
+      <span class="tt-trends-meta">${trends.length} 条 · ${new Date(cachedTrends.ts).toLocaleTimeString()}</span>
+    </div>
+    <div class="tt-trends-list">${list}</div>
+  `;
+}
+
 // ===== Tab 1：爆款选题生成 =====
 function renderGenTab(el, container) {
   const history = Storage.get(GEN_KEY, []).sort((a, b) => b.time - a.time);
   const rerender = () => renderGenTab(el, container);
+  const trends = cachedTrends && cachedTrends.items ? cachedTrends.items : [];
 
   el.innerHTML = `
     <div class="card card-pad mb-16">
@@ -147,23 +205,29 @@ function renderGenTab(el, container) {
         ${hasAiConfig() ? '' : '<span style="margin-left:auto;font-size:11px;color:var(--amber)">未配置AI</span>'}
       </div>
       <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.6">
-        基于资深运营专家设定，一次生成 20 个高情绪价值选题（含痛点、推荐书籍、爆款标题与评分）。可选填方向让结果更聚焦。
+        已接入微博/知乎/头条实时热榜。AI 会基于<strong>当下真实热点</strong>生成选题，避免每次都一样。可选填方向让结果更聚焦。
       </div>
+
+      <div class="tt-live-trends" id="tt_trendsBox">
+        ${renderTrendsPreview(trends)}
+      </div>
+
       <div class="field">
         <label class="field-label">指定方向 / 关键词（可选）</label>
         <input class="input" id="tt_focus" placeholder="如：30岁年龄焦虑、亲密关系、最近的热搜词…" value="${escapeAttr(Storage.get('wechat_topic_focus', ''))}">
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;align-items:center">
         <button class="btn btn-primary" id="tt_genBtn">✦ 生成今日 20 个爆款选题</button>
+        <button class="btn" id="tt_refreshTrendsBtn">🔄 刷新热榜</button>
         <button class="btn" id="tt_clearBtn">清空历史</button>
       </div>
       <div id="tt_genStatus" style="display:none;font-size:12px;color:var(--primary);margin-top:10px">
-        <span class="gen-dot"></span> AI 正在挖掘爆款选题，请稍候…
+        <span class="gen-dot"></span> <span id="tt_genStatusText">AI 正在挖掘爆款选题，请稍候…</span>
       </div>
     </div>
 
     <div id="tt_genList">
-      ${history.length === 0 ? `<div class="empty"><div class="empty-icon">\uD83D\uDD25</div><div class="empty-title">还没有生成过选题</div><div class="empty-desc">点上方按钮，让 AI 给你挖一批能打的选题</div></div>` :
+      ${history.length === 0 ? `<div class="empty"><div class="empty-icon">\uD83D\uDD25</div><div class="empty-title">还没有生成过选题</div><div class="empty-desc">点上方按钮，让 AI 基于实时热榜给你挖一批能打的选题</div></div>` :
         history.map(batch => renderGenBatch(batch)).join('')}
     </div>
   `;
@@ -175,27 +239,47 @@ function renderGenTab(el, container) {
   const stopBtn = null;
   const statusEl = el.querySelector('#tt_genStatus');
 
+  const statusTextEl = el.querySelector('#tt_genStatusText');
+
   genBtn.onclick = async () => {
     if (!hasAiConfig()) { openAiConfigModal(rerender); return; }
     if (genAbort) { genAbort.abort(); return; }
     genAbort = new AbortController();
     genBtn.textContent = '⏹ 停止生成';
     statusEl.style.display = 'block';
+
+    let trends = [];
+    let trendsText = '';
     try {
+      statusTextEl.textContent = '正在拉取微博/知乎/头条实时热榜…';
+      trends = await fetchRealTimeTrends(true); // 生成时强制刷新，保证最新
+      if (trends.length) {
+        // 刷新预览
+        const box = el.querySelector('#tt_trendsBox');
+        if (box) box.innerHTML = renderTrendsPreview(trends);
+        trendsText = trends.map((t, i) => `${i + 1}. [${t.source}] ${t.title}${t.hot ? ' (热 ' + fmtHot(t.hot) + ')' : ''}`).join('\n');
+      }
+    } catch (e) {
+      // 热榜失败不影响主流程，继续走 AI 兜底
+      console.warn('拉取实时热榜失败', e);
+    }
+
+    try {
+      statusTextEl.textContent = 'AI 正在基于实时热榜挖掘爆款选题…';
       const text = await aiChatStream([
         { role: 'system', content: buildTopicGenSystem() },
-        { role: 'user', content: buildTopicGenUser(focusInput.value) },
+        { role: 'user', content: buildTopicGenUser(focusInput.value, trendsText) },
       ], { temperature: Math.round((0.7 + Math.random() * 0.2) * 100) / 100, signal: genAbort.signal });
 
       const arr = extractJson(text, true);
       if (!Array.isArray(arr) || arr.length === 0) { toast('选题解析失败，请重试'); statusEl.style.display = 'none'; genBtn.textContent = '✦ 生成今日 20 个爆款选题'; return; }
-      const batch = { id: Storage.uid(), time: Date.now(), focus: focusInput.value.trim(), topics: arr };
+      const batch = { id: Storage.uid(), time: Date.now(), focus: focusInput.value.trim(), topics: arr, live: trends.length > 0, trendCount: trends.length };
       const h = Storage.get(GEN_KEY, []);
       h.unshift(batch);
       Storage.set(GEN_KEY, h);
       // 重新整体渲染列表（保留输入框内容）
       rerender();
-      toast(`已生成 ${arr.length} 个爆款选题`);
+      toast(`已生成 ${arr.length} 个选题${trends.length ? '（基于 ' + trends.length + ' 条实时热榜）' : ''}`);
     } catch (e) {
       if (e.name === 'AbortError') toast('已停止');
       else if (e.message === 'NO_CONFIG') openAiConfigModal(rerender);
@@ -204,6 +288,24 @@ function renderGenTab(el, container) {
       genAbort = null;
       statusEl.style.display = 'none';
       genBtn.textContent = '✦ 生成今日 20 个爆款选题';
+    }
+  };
+
+  el.querySelector('#tt_refreshTrendsBtn').onclick = async () => {
+    const btn = el.querySelector('#tt_refreshTrendsBtn');
+    const original = btn.textContent;
+    btn.textContent = '⏳ 刷新中…';
+    btn.disabled = true;
+    try {
+      const trends = await fetchRealTimeTrends(true);
+      const box = el.querySelector('#tt_trendsBox');
+      if (box) box.innerHTML = renderTrendsPreview(trends);
+      toast(trends.length ? `已刷新 ${trends.length} 条实时热榜` : '热榜暂时拉取失败，请检查网络');
+    } catch (e) {
+      toast('热榜刷新失败：' + e.message);
+    } finally {
+      btn.textContent = original;
+      btn.disabled = false;
     }
   };
 
@@ -225,6 +327,7 @@ function renderGenBatch(batch) {
         <span class="tt-no">${escapeHtml(t.no || '')}</span>
         <div style="flex:1;min-width:0">
           <div class="tt-topic-title">${escapeHtml(t.topic || '')}</div>
+          ${t.trend ? `<div class="tt-row"><span class="tt-key">来源</span><span style="color:var(--primary)">${escapeHtml(t.trend)}</span></div>` : ''}
           ${t.pain ? `<div class="tt-row"><span class="tt-key">痛点</span>${escapeHtml(t.pain)}</div>` : ''}
           ${t.reader ? `<div class="tt-row"><span class="tt-key">读者</span>${escapeHtml(t.reader)}</div>` : ''}
           ${t.book ? `<div class="tt-row"><span class="tt-key">荐书</span>${escapeHtml(t.book)}</div>` : ''}
@@ -244,6 +347,7 @@ function renderGenBatch(batch) {
       <div class="tt-batch-head">
         <span>📅 ${new Date(batch.time).toLocaleString()}</span>
         ${batch.focus ? `<span class="badge badge-gray">${escapeHtml(batch.focus)}</span>` : ''}
+        ${batch.live ? `<span class="badge badge-green">🔥 基于 ${batch.trendCount || 0} 条实时热榜</span>` : ''}
         <span style="margin-left:auto;font-size:12px;color:var(--text-muted)">${batch.topics.length} 个选题</span>
       </div>
       <div class="tt-topic-grid">${topics}</div>

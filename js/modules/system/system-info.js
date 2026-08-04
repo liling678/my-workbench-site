@@ -3,11 +3,19 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v24';
-export const APP_DATE = '2026-07-28';
+export const APP_VERSION = 'v25';
+export const APP_DATE = '2026-08-04';
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v25', date: '2026-08-04',
+    items: [
+      '「爆款选题生成」接入微博/知乎/头条实时热榜，AI 基于当下真实热点生成选题，避免每次内容雷同',
+      '生成前强制刷新热榜，结果卡片新增「来源」字段与「基于 N 条实时热榜」标识',
+      '新增「刷新热榜」按钮，可手动查看当前前 8 条实时热点；热榜拉取失败时自动走 AI 兜底',
+    ],
+  },
   {
     version: 'v24', date: '2026-07-28',
     items: [
