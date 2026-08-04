@@ -42,33 +42,71 @@ function scoreColor(s) {
   return 'var(--red)';
 }
 
-// ===== 实时热榜拉取（与 hot-search.js 同源，避免跨域问题） =====
+// ===== 实时热榜拉取（多数据源聚合，浏览器直连，失败自动跳过） =====
+// 每个数据源自带解析函数，统一返回 {title, hot, link, source?}
 const TREND_SOURCES = [
-  { name: '微博', url: 'https://60s-api.viki.moe/v2/weibo' },
-  { name: '知乎', url: 'https://60s-api.viki.moe/v2/zhihu' },
-  { name: '头条', url: 'https://60s-api.viki.moe/v2/toutiao' },
+  { name: '微博', url: 'https://60s-api.viki.moe/v2/weibo', parse: j => normViki(j, 20) },
+  { name: '知乎', url: 'https://60s-api.viki.moe/v2/zhihu', parse: j => normViki(j, 20) },
+  { name: '头条', url: 'https://60s-api.viki.moe/v2/toutiao', parse: j => normViki(j, 20) },
+  { name: '抖音', url: 'https://60s-api.viki.moe/v2/douyin', parse: j => normViki(j, 20) },
+  { name: '百度', url: 'https://60s-api.viki.moe/v2/baidu', parse: j => normViki(j, 20) },
+  // 第二个聚合源：一次取回多个平台（微信/B站/抖音/百度等），提高覆盖面与稳定性
+  { name: '综合热源', url: 'https://api.vvhan.com/api/hotlist/all', parse: j => normVvhanAll(j, 15) },
 ];
+
+function normViki(j, n) {
+  if (!j || j.code !== 200 || !Array.isArray(j.data)) return [];
+  return j.data.slice(0, n).map(i => ({ title: i.title || '', hot: i.hot_value || 0, link: i.link || i.url || '' })).filter(x => x.title);
+}
+function normVvhanAll(j, n) {
+  const out = [];
+  const data = j && (j.data || j);
+  const nameMap = { baidu: '百度', zhihu: '知乎', bili: 'B站', douyin: '抖音', wb: '微博', wx: '微信', ithome: 'IT之家', toutiao: '头条', wy: '网易', dy: '抖音' };
+  const push = (arr, src) => {
+    if (!Array.isArray(arr)) return;
+    arr.slice(0, n).forEach(i => {
+      const title = i.title || i.name || i.word || '';
+      if (title) out.push({ title, hot: Number(i.hot || i.hotnum || i.num || 0), link: i.url || i.link || '', source: nameMap[src] || src });
+    });
+  };
+  if (Array.isArray(data)) push(data);
+  else if (data && typeof data === 'object') Object.keys(data).forEach(k => push(data[k], k));
+  return out;
+}
 
 async function fetchRealTimeTrends(force = false) {
   if (!force && cachedTrends && cachedTrends.items && cachedTrends.items.length && (Date.now() - cachedTrends.ts) < TREND_CACHE_TTL) {
     return cachedTrends.items;
   }
-  const results = await Promise.allSettled(
+  const fetched = await Promise.allSettled(
     TREND_SOURCES.map(async src => {
       const resp = await fetch(src.url, { signal: AbortSignal.timeout(8000) });
       const json = await resp.json();
-      if (json.code !== 200 || !Array.isArray(json.data)) throw new Error('bad data');
-      return json.data.slice(0, 20).map(item => ({
-        title: item.title || '',
-        hot: item.hot_value || 0,
-        link: item.link || item.url || '',
-        source: src.name,
+      const items = (src.parse(json) || []).map(it => ({
+        title: it.title,
+        hot: Number(it.hot) || 0,
+        link: it.link || '',
+        source: it.source || src.name,
       })).filter(x => x.title);
+      if (items.length === 0) throw new Error('empty');
+      return items;
     })
   );
-  const items = results.filter(r => r.status === 'fulfilled').flatMap(r => r.value);
+  // 跨源去重：同一热搜可能同时出现在多个平台，只保留一条
+  const seen = new Set();
+  const items = [];
+  for (const r of fetched) {
+    if (r.status !== 'fulfilled') continue;
+    for (const it of r.value) {
+      const key = (it.title || '').replace(/\s+/g, '').toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      items.push(it);
+    }
+  }
   if (items.length) {
-    cachedTrends = { ts: Date.now(), items };
+    items.sort((a, b) => (b.hot || 0) - (a.hot || 0));
+    cachedTrends = { ts: Date.now(), items, sources: TREND_SOURCES.length };
     Storage.set(TREND_CACHE_KEY, cachedTrends);
   }
   return items;
@@ -79,6 +117,62 @@ function fmtHot(n) {
   if (n >= 10000) return (n / 10000).toFixed(1) + '万';
   return String(n);
 }
+
+// ===== 选题去重（中文 bigram 的 Jaccard 相似度） =====
+function bigramsOf(s) {
+  s = (s || '').replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, '');
+  const set = new Set();
+  if (s.length < 2) { if (s) set.add(s); return set; }
+  for (let i = 0; i < s.length - 1; i++) set.add(s.slice(i, i + 2));
+  return set;
+}
+function textSim(a, b) {
+  const A = bigramsOf(a), B = bigramsOf(b);
+  if (!A.size || !B.size) return 0;
+  let inter = 0;
+  for (const x of A) if (B.has(x)) inter++;
+  return inter / (A.size + B.size - inter);
+}
+
+// 收集最近生成过的选题（topic/title），用于去重比对
+function collectHistoryTopics(limit = 3) {
+  const hist = Storage.get(GEN_KEY, []).slice(0, limit);
+  const out = [];
+  hist.forEach(b => (b.topics || []).forEach(t => {
+    if (t.topic) out.push(t.topic);
+    if (t.title) out.push(t.title);
+  }));
+  return out;
+}
+
+// 去重：剔除与历史/本批高度相似（>threshold）的选题，保留首个
+function dedupeTopics(arr, history, threshold = 0.6) {
+  const seen = [];
+  const out = [];
+  const isDup = (text) => {
+    if (!text) return false;
+    for (const h of history) if (textSim(text, h) > threshold) return true;
+    for (const s of seen) if (textSim(text, s) > threshold) return true;
+    return false;
+  };
+  for (const t of arr) {
+    const topic = t.topic || '';
+    const title = t.title || '';
+    if (isDup(topic) || (title && isDup(title))) continue;
+    if (topic) seen.push(topic);
+    if (title) seen.push(title);
+    out.push(t);
+  }
+  return out;
+}
+
+// 数据源配色（用于热榜预览小圆点）
+const SRC_COLORS = {
+  '微博': '#E6162D', '知乎': '#0084FF', '头条': '#F04142', '抖音': '#161823',
+  '百度': '#2932E1', 'B站': '#FB7299', '微信': '#07C160', '网易': '#C20C0C',
+  'IT之家': '#E11425', '综合热源': '#8a6d3b',
+};
+function sourceColor(name) { return SRC_COLORS[name] || '#888'; }
 
 // ===== AI 提示词 =====
 
@@ -107,6 +201,7 @@ function buildTopicGenSystem() {
 - 不要再用"人到30岁才发现""真正厉害的女人都懂得"这类固定标题模板。
 - 不要生成"如何读一本书""努力的人一定成功"这类空泛鸡汤。
 - 不要每次重复同样的 6 大方向和 6 个标题结构。
+- 不要生成与"避免重复"清单里高度相似的选题——每条选题的角度、切入词、标题都要是新鲜的。
 
 【评分标准】点击欲望(30) + 情绪共鸣(30) + 转发价值(20) + 长期价值(20) = 100分。只推荐80分以上选题。
 
@@ -117,13 +212,16 @@ function buildTopicGenSystem() {
 请生成 20 个选题，按爆款评分从高到低排序。`;
 }
 
-function buildTopicGenUser(focus, trendsText) {
+function buildTopicGenUser(focus, trendsText, avoidText) {
   let s = '';
   if (trendsText && trendsText.trim()) {
-    s += `【实时热榜】以下是从微博/知乎/头条拉取的当下真实热门话题（按热度排序）：\n${trendsText.trim()}\n\n`;
+    s += `【实时热榜】以下是从微博/知乎/头条/抖音/百度等多平台拉取的当下真实热门话题（按热度排序）：\n${trendsText.trim()}\n\n`;
     s += '请基于以上真实热榜，生成 20 个高情绪价值的爆款选题。优先从热榜中找角度，不要凭空编造。';
   } else {
     s += '未获取到实时热榜，请基于当下社会情绪和女性成长读书号调性，生成 20 个不重复、有新鲜感的爆款选题。';
+  }
+  if (avoidText && avoidText.trim()) {
+    s += `\n\n【避免重复】以下选题你之前已经生成过，请勿再生成相同或高度相似的（换个角度或热点重新切入）：\n${avoidText.trim()}`;
   }
   if (focus && focus.trim()) {
     s += `\n\n请重点围绕用户指定的方向/关键词来生成：${focus.trim()}（可融入但不必局限于此，保持账号整体调性）。`;
@@ -176,15 +274,17 @@ function renderTrendsPreview(trends) {
   if (!trends || trends.length === 0) {
     return `<div class="tt-trends-empty">⏳ 尚未加载实时热榜，点「刷新热榜」或「生成选题」时自动拉取</div>`;
   }
+  const srcCount = cachedTrends && cachedTrends.sources ? cachedTrends.sources : TREND_SOURCES.length;
   const list = trends.slice(0, 8).map((t, i) => `
     <span class="tt-trend-chip" title="${escapeAttr(t.source + (t.hot ? ' · ' + fmtHot(t.hot) : ''))}">
-      <span class="tt-trend-dot" style="background:${t.source === '微博' ? '#E6162D' : t.source === '知乎' ? '#0084FF' : '#F04142'}"></span>
+      <span class="tt-trend-dot" style="background:${sourceColor(t.source)}"></span>
       ${escapeHtml(t.title)}
+      <span class="tt-trend-src">${escapeHtml(t.source)}</span>
     </span>
   `).join('');
   return `
     <div class="tt-trends-head">
-      <span>🔥 已接入实时热榜（展示前 8 条）</span>
+      <span>🔥 已接入 ${srcCount} 个实时数据源（微博/知乎/头条/抖音/百度…）</span>
       <span class="tt-trends-meta">${trends.length} 条 · ${new Date(cachedTrends.ts).toLocaleTimeString()}</span>
     </div>
     <div class="tt-trends-list">${list}</div>
@@ -205,7 +305,7 @@ function renderGenTab(el, container) {
         ${hasAiConfig() ? '' : '<span style="margin-left:auto;font-size:11px;color:var(--amber)">未配置AI</span>'}
       </div>
       <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.6">
-        已接入微博/知乎/头条实时热榜。AI 会基于<strong>当下真实热点</strong>生成选题，避免每次都一样。可选填方向让结果更聚焦。
+        已接入微博/知乎/头条/抖音/百度等多平台实时热榜，并自动去除重复选题。AI 会基于<strong>当下真实热点</strong>生成选题，且不与你之前生成的重复。可选填方向让结果更聚焦。
       </div>
 
       <div class="tt-live-trends" id="tt_trendsBox">
@@ -251,35 +351,46 @@ function renderGenTab(el, container) {
     let trends = [];
     let trendsText = '';
     try {
-      statusTextEl.textContent = '正在拉取微博/知乎/头条实时热榜…';
+      statusTextEl.textContent = '正在拉取微博/知乎/头条/抖音/百度等多平台实时热榜…';
       trends = await fetchRealTimeTrends(true); // 生成时强制刷新，保证最新
       if (trends.length) {
         // 刷新预览
         const box = el.querySelector('#tt_trendsBox');
         if (box) box.innerHTML = renderTrendsPreview(trends);
-        trendsText = trends.map((t, i) => `${i + 1}. [${t.source}] ${t.title}${t.hot ? ' (热 ' + fmtHot(t.hot) + ')' : ''}`).join('\n');
+        trendsText = trends.slice(0, 30).map((t, i) => `${i + 1}. [${t.source}] ${t.title}${t.hot ? ' (热 ' + fmtHot(t.hot) + ')' : ''}`).join('\n');
       }
     } catch (e) {
       // 热榜失败不影响主流程，继续走 AI 兜底
       console.warn('拉取实时热榜失败', e);
     }
 
+    // 去重前置：把最近生成的选题喂给 AI，让它主动避开相似选题
+    const avoidTopics = collectHistoryTopics(3);
+    const avoidText = avoidTopics.length ? avoidTopics.map((t, i) => `${i + 1}. ${t}`).join('\n') : '';
+
     try {
       statusTextEl.textContent = 'AI 正在基于实时热榜挖掘爆款选题…';
       const text = await aiChatStream([
         { role: 'system', content: buildTopicGenSystem() },
-        { role: 'user', content: buildTopicGenUser(focusInput.value, trendsText) },
-      ], { temperature: Math.round((0.7 + Math.random() * 0.2) * 100) / 100, signal: genAbort.signal });
+        { role: 'user', content: buildTopicGenUser(focusInput.value, trendsText, avoidText) },
+      ], { temperature: Math.round((0.75 + Math.random() * 0.2) * 100) / 100, signal: genAbort.signal });
 
       const arr = extractJson(text, true);
       if (!Array.isArray(arr) || arr.length === 0) { toast('选题解析失败，请重试'); statusEl.style.display = 'none'; genBtn.textContent = '✦ 生成今日 20 个爆款选题'; return; }
-      const batch = { id: Storage.uid(), time: Date.now(), focus: focusInput.value.trim(), topics: arr, live: trends.length > 0, trendCount: trends.length };
+
+      // 去重后置过滤：与历史/本批高度相似的选题直接剔除
+      const cleaned = dedupeTopics(arr, avoidTopics, 0.6);
+      const removed = arr.length - cleaned.length;
+      const batch = { id: Storage.uid(), time: Date.now(), focus: focusInput.value.trim(), topics: cleaned, live: trends.length > 0, trendCount: trends.length, deduped: removed, sources: cachedTrends ? cachedTrends.sources : 0 };
       const h = Storage.get(GEN_KEY, []);
       h.unshift(batch);
       Storage.set(GEN_KEY, h);
       // 重新整体渲染列表（保留输入框内容）
       rerender();
-      toast(`已生成 ${arr.length} 个选题${trends.length ? '（基于 ' + trends.length + ' 条实时热榜）' : ''}`);
+      let msg = `已生成 ${cleaned.length} 个选题`;
+      if (trends.length) msg += `（基于 ${trends.length} 条实时热榜）`;
+      if (removed > 0) msg += `，已过滤 ${removed} 个重复`;
+      toast(msg);
     } catch (e) {
       if (e.name === 'AbortError') toast('已停止');
       else if (e.message === 'NO_CONFIG') openAiConfigModal(rerender);
@@ -348,6 +459,7 @@ function renderGenBatch(batch) {
         <span>📅 ${new Date(batch.time).toLocaleString()}</span>
         ${batch.focus ? `<span class="badge badge-gray">${escapeHtml(batch.focus)}</span>` : ''}
         ${batch.live ? `<span class="badge badge-green">🔥 基于 ${batch.trendCount || 0} 条实时热榜</span>` : ''}
+        ${batch.deduped ? `<span class="badge badge-gray">🔁 已过滤 ${batch.deduped} 个重复</span>` : ''}
         <span style="margin-left:auto;font-size:12px;color:var(--text-muted)">${batch.topics.length} 个选题</span>
       </div>
       <div class="tt-topic-grid">${topics}</div>

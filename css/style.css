@@ -1443,4 +1443,5 @@ input, textarea, select { font-family: inherit; }
 .tt-trend-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-body); background: var(--bg-card); border: 0.5px solid var(--border); border-radius: 16px; padding: 5px 10px; max-width: 100%; }
 .tt-trend-chip span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tt-trend-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.tt-trend-src { font-size: 10px; color: var(--text-muted); background: var(--bg-input); border-radius: 8px; padding: 1px 6px; flex: none; }
 .badge-green { background: rgba(15, 110, 86, 0.10); color: var(--primary); border: 0.5px solid rgba(15, 110, 86, 0.25); }

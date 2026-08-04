@@ -3,11 +3,19 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v25';
+export const APP_VERSION = 'v26';
 export const APP_DATE = '2026-08-04';
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v26', date: '2026-08-04',
+    items: [
+      '「爆款选题生成」数据源扩展到 6 个：微博/知乎/头条/抖音/百度 + 综合聚合源(vvhan)，多源失败自动跳过并跨源去重',
+      '新增「去重过滤层」：生成前把最近 3 批历史选题喂给 AI 主动避开，生成后再用中文 bigram 相似度二次过滤本批与历史重复项',
+      '结果卡片新增「已过滤 N 个重复」标识，热榜预览条显示数据源数量与每条来源标签，AI 温度提高以增加多样性',
+    ],
+  },
   {
     version: 'v25', date: '2026-08-04',
     items: [
