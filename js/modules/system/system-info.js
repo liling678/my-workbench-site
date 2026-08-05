@@ -3,11 +3,19 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v28';
+export const APP_VERSION = 'v29';
 export const APP_DATE = '2026-08-05';
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v29', date: '2026-08-05',
+    items: [
+      '云同步增加「强制覆盖」按钮：电脑「以本地为准覆盖云端」、手机「以云端为准覆盖本地」，流程确定不再歧义',
+      '拉取/上传结果新增诊断信息：实际生效的仓库、同步码、远端条目数、云端文件最后更新时间，一眼看出「云端是不是电脑刚传的」',
+      '「一致」提示增加指引：若刚在电脑改了数据，请先在电脑点「上传到云端」再拉取',
+    ],
+  },
   {
     version: 'v28', date: '2026-08-05',
     items: [

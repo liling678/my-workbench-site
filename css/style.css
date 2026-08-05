@@ -211,7 +211,7 @@ input, textarea, select { font-family: inherit; }
 .sync-steps li { margin-bottom: 4px; }
 .sync-steps a { color: var(--primary); text-decoration: underline; }
 .sync-steps code { background: var(--primary-bg); color: var(--primary); padding: 1px 6px; border-radius: 5px; font-size: 12.5px; word-break: break-all; }
-.sync-actions { display: flex; gap: 10px; margin: 12px 0 4px; }
+.sync-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0 4px; }
 .sync-actions .btn { flex: 1; }
 .sync-log { margin-top: 10px; padding: 10px 12px; background: var(--bg-input); border-radius: 8px; font-size: 12.5px; color: var(--text-soft); line-height: 1.9; }
 .sync-log-row { display: flex; align-items: center; gap: 6px; }
@@ -529,6 +529,7 @@ input, textarea, select { font-family: inherit; }
 .btn-accent { background: var(--primary-bg); color: var(--primary); border-color: var(--primary-light); font-weight: 600; }
 .btn-sm { padding: 5px 10px; font-size: 12px; }
 .btn-danger { color: var(--red); border-color: var(--red); }
+.btn-warn { color: #9a6b00; border-color: #e0a800; background: #fff7e0; }
 .btn svg { width: 16px; height: 16px; }
 
 /* ===== Form ===== */

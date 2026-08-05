@@ -7,7 +7,7 @@
 // 同步模式：纯手动。不后台定时同步、也不在改数据时自动上传。
 //          由用户在设置弹窗里点「⬆ 上传到云端」或「⬇ 从云端拉取」主动触发。
 import { Storage, onAfterSet } from './storage.js';
-import { openModal, closeModal, toast, escapeHtml } from './ui.js';
+import { openModal, closeModal, confirmDialog, toast, escapeHtml } from './ui.js';
 
 const CONFIG_KEY = 'cloud_config';   // { pat, owner, repo, syncCode }
 const TS_KEY = 'cloud_ts';           // { key: lastWriteTs } 用于逐 key last-write-wins
@@ -228,6 +228,22 @@ export async function initCloud() {
   }
 }
 
+// 读取远端文件最后写入时间（commit 时间），用于诊断「云端是不是刚被某设备上传过」
+async function fetchCommitDate() {
+  try {
+    const c = loadCloudConfig();
+    const p = filePath().split('/').map(encodeURIComponent).join('/');
+    const url = `https://api.github.com/repos/${c.owner}/${c.repo}/commits?path=${p}&sha=${SYNC_BRANCH}&per_page=1&_cb=${Date.now()}`;
+    const res = await ghFetch(url, { headers: ghHeaders() });
+    if (!res.ok) return null;
+    const arr = await res.json();
+    if (Array.isArray(arr) && arr[0] && arr[0].commit) {
+      return arr[0].commit.author?.date || arr[0].commit.committer?.date || null;
+    }
+  } catch (e) { console.warn('fetchCommitDate failed', e); }
+  return null;
+}
+
 // 读取远端文件（wb-sync 分支）
 // 返回：
 //   { notFound: true }            —— 文件/分支不存在（404，或代理把 404 伪装成 200 时通过 message 识别）
@@ -260,11 +276,13 @@ async function readRemote() {
   }
   let parsed = {};
   try { parsed = JSON.parse(b64decode(json.content)); } catch (e) { parsed = {}; }
-  return { sha: json.sha, ts: parsed.ts || {}, data: parsed.data || {}, raw: json };
+  const lastCommit = await fetchCommitDate();
+  return { sha: json.sha, ts: parsed.ts || {}, data: parsed.data || {}, raw: json, lastCommit };
 }
 
 // 把本地数据合并写入远端（逐 key last-write-wins）
-async function writeRemote() {
+// opts.force=true：以本地为准，云端只保留本地有的键（清除云端独有、本地已删的键）
+async function writeRemote(opts = {}) {
   await ensureSyncBranch();
   const local = Storage.exportAll();
   const localTs = loadTs();
@@ -276,17 +294,32 @@ async function writeRemote() {
   const newTs = Object.assign({}, rTs);
   const newData = Object.assign({}, rData);
   let pushed = 0;
-  for (const [key, value] of Object.entries(local)) {
-    // 配置、时间戳、同步日志都是设备本地状态，不需要跨设备同步
-    if (key === CONFIG_KEY || key === TS_KEY || key === SYNC_LOG_KEY) continue;
-    const hasRemote = Object.prototype.hasOwnProperty.call(rData, key);
-    const sameValue = hasRemote && JSON.stringify(rData[key]) === JSON.stringify(value);
-    // 只要远端没有，或内容确实不同，就纳入本次手动上传。
-    // 不再只依赖时间戳，避免历史数据和本地修改被误判为“没有新数据”。
-    if (!sameValue) {
-      newData[key] = value;
+  const localKeys = Object.keys(local).filter(k => k !== CONFIG_KEY && k !== TS_KEY && k !== SYNC_LOG_KEY);
+  if (opts.force) {
+    // 强制覆盖：云端完全以本地为准，丢掉云端独有键
+    for (const key of localKeys) {
+      const changed = !Object.prototype.hasOwnProperty.call(rData, key) || JSON.stringify(rData[key]) !== JSON.stringify(local[key]);
+      newData[key] = local[key];
       newTs[key] = Math.max(localTs[key] || 0, Date.now());
-      pushed++;
+      if (changed) pushed++;
+    }
+    // 清除云端有但本地没有的键
+    for (const key of Object.keys(rData)) {
+      if (!localKeys.includes(key)) { delete newData[key]; delete newTs[key]; pushed++; }
+    }
+  } else {
+    for (const [key, value] of Object.entries(local)) {
+      // 配置、时间戳、同步日志都是设备本地状态，不需要跨设备同步
+      if (key === CONFIG_KEY || key === TS_KEY || key === SYNC_LOG_KEY) continue;
+      const hasRemote = Object.prototype.hasOwnProperty.call(rData, key);
+      const sameValue = hasRemote && JSON.stringify(rData[key]) === JSON.stringify(value);
+      // 只要远端没有，或内容确实不同，就纳入本次手动上传。
+      // 不再只依赖时间戳，避免历史数据和本地修改被误判为“没有新数据”。
+      if (!sameValue) {
+        newData[key] = value;
+        newTs[key] = Math.max(localTs[key] || 0, Date.now());
+        pushed++;
+      }
     }
   }
   const body = {
@@ -305,14 +338,23 @@ async function writeRemote() {
 }
 
 // 拉取云端数据合并到本地（跨设备时钟不一致时用「值差异」兜底，避免漏拉）
-// 返回 { updated, notFound, remoteKeys, sha }
-export async function pullAll() {
+// opts.force=true：以云端为准，本地只保留云端有的键（清除本地独有、云端没有的键）
+// 返回 { updated, notFound, remoteKeys, sha, lastCommit }
+export async function pullAll(opts = {}) {
   if (!ready) return { updated: 0, notFound: false };
   const remote = await readRemote();
   if (!remote || remote.notFound) return { updated: 0, notFound: true };
-  console.info('[cloud-sync] 读取远端文件', { sha: remote.sha, keys: Object.keys(remote.data).length });
+  console.info('[cloud-sync] 读取远端文件', { sha: remote.sha, keys: Object.keys(remote.data).length, lastCommit: remote.lastCommit });
   const localTs = loadTs();
   let updated = 0;
+  if (opts.force) {
+    // 强制覆盖：本地完全以云端为准，丢掉本地独有键
+    const localAll = Storage.exportAll();
+    for (const k of Object.keys(localAll)) {
+      if (k === CONFIG_KEY || k === TS_KEY || k === SYNC_LOG_KEY) continue;
+      if (!Object.prototype.hasOwnProperty.call(remote.data, k)) { Storage.remove(k); updated++; }
+    }
+  }
   for (const [key, value] of Object.entries(remote.data)) {
     // 不能只比时间戳：两台设备系统时钟可能不一致（一台快一台慢），纯时间戳比较会漏拉。
     // 改为：本地缺失 或 远端值不同 → 一律拉取（以值差异兜底，确保对端的新改动能下来）。
@@ -325,21 +367,39 @@ export async function pullAll() {
     }
   }
   saveTs(localTs);
-  return { updated, notFound: false, remoteKeys: Object.keys(remote.data).length, sha: remote.sha };
+  return { updated, notFound: false, remoteKeys: Object.keys(remote.data).length, sha: remote.sha, lastCommit: remote.lastCommit };
+}
+
+// 把 ISO 时间转成「MM-DD HH:mm」本地显示（给云端 commit 时间用）
+function fmtDateTime(iso) {
+  if (!iso) return '未知';
+  try {
+    const d = new Date(iso);
+    const pad = n => String(n).padStart(2, '0');
+    return (d.getMonth() + 1) + '-' + d.getDate() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  } catch (e) { return String(iso); }
+}
+
+// 诊断补全：在提示里带上当前生效的仓库/同步码/远端条目数/云端最后更新时间
+function diagSuffix(result) {
+  const cfg = loadCloudConfig() || {};
+  const lc = result && result.lastCommit ? fmtDateTime(result.lastCommit) : '未知';
+  return `\n仓库=${cfg.repo || '?'} / 同步码=${cfg.syncCode || '?'} / 远端 ${result ? result.remoteKeys : '?'} 条 / 云端最后更新：${lc}`;
 }
 
 // 手动「上传到云端」：把本地数据推送到 GitHub
-export async function pushNow(showToast = true) {
+// opts.force=true：以本地为准强制覆盖云端
+export async function pushNow(showToast = true, opts = {}) {
   if (!ready) { if (showToast) toast('云同步未启用，请先保存设置'); return 0; }
   try {
     setStatus('syncing');
-    const pushed = await writeRemote();
+    const pushed = await writeRemote(opts);
     setStatus('ok');
     const log = loadSyncLog();
     log.lastPush = Date.now();
     log.lastPushCount = pushed;
     saveSyncLog(log);
-    if (showToast) toast(pushed > 0 ? `已上传 ${pushed} 条到云端` : '没有新数据需要上传');
+    if (showToast) toast((pushed > 0 ? `已上传 ${pushed} 条到云端` : '没有新数据需要上传') + diagSuffix());
     updateSyncLogView();
     return pushed;
   } catch (e) {
@@ -351,11 +411,12 @@ export async function pushNow(showToast = true) {
 }
 
 // 手动「从云端拉取」：把 GitHub 数据拉到本地，并在成功后刷新当前界面（无需重启）
-export async function pullNow(showToast = true) {
+// opts.force=true：以云端为准强制覆盖本地
+export async function pullNow(showToast = true, opts = {}) {
   if (!ready) { if (showToast) toast('云同步未启用，请先保存设置'); return 0; }
   try {
     setStatus('syncing');
-    const result = await pullAll();
+    const result = await pullAll(opts);
     setStatus('ok');
     const log = loadSyncLog();
     log.lastPull = Date.now();
@@ -370,9 +431,9 @@ export async function pullNow(showToast = true) {
         const cfg = loadCloudConfig() || {};
         toast(`云端没有找到同步文件（404）。\n请确认手机端与电脑端的「仓库=${cfg.repo || '?'} / 同步码=${cfg.syncCode || '?'}」完全一致，且电脑端已成功上传到同一处`);
       } else if (result.updated > 0) {
-        toast(`已从云端拉取 ${result.updated} 条`);
+        toast((opts.force ? `已强制覆盖拉取 ${result.updated} 条（以云端为准）` : `已从云端拉取 ${result.updated} 条`) + diagSuffix(result));
       } else {
-        toast(`云端数据与本地一致（无更新）· 远端 ${result.remoteKeys} 个条目`);
+        toast(`云端数据与本地一致（无更新）` + diagSuffix(result) + `\n若你刚在电脑端改了数据，请先在电脑端点「⬆ 上传到云端」再拉取`);
       }
     }
     return result.updated;
@@ -500,6 +561,11 @@ export function openSyncSettings() {
       <div class="sync-actions">
         <button class="btn btn-primary" id="cloudPullBtn">⬇ 从云端拉取</button>
         <button class="btn btn-ghost" id="cloudPushBtn">⬆ 上传到云端</button>
+        <button class="btn btn-warn" id="cloudForcePullBtn">⬇ 强制覆盖拉取（以云端为准）</button>
+        <button class="btn btn-warn" id="cloudForcePushBtn">⬆ 强制覆盖上传（以本地为准）</button>
+      </div>
+      <div class="form-hint" style="margin-top:6px">
+        ⚠️ 「强制覆盖」会单向覆盖、不合并：手机点「强制拉取」会丢弃手机本地独有数据、完全变成云端内容；电脑点「强制上传」会用电脑数据覆盖云端（含删除云端独有键）。<b>标准同步请用上面两个普通按钮</b>，只有当普通拉取一直报「一致」却拿不到数据时，才用强制按钮确认流程。
       </div>
       <div class="sync-log" id="cloudSyncLog"></div>
       <div class="form-hint" style="margin-top:8px">
@@ -562,6 +628,16 @@ export function openSyncSettings() {
   document.getElementById('cloudPullBtn').onclick = async () => {
     if (!ready) { toast('请先点「保存设置」'); return; }
     await pullNow(true);
+  };
+  document.getElementById('cloudForcePushBtn').onclick = async () => {
+    if (!ready) { toast('请先点「保存设置」'); return; }
+    const ok = await confirmDialog({ title: '强制覆盖上传', message: '将用本机数据完全覆盖云端（删除云端独有、本机没有的键）。\n确定继续？', confirmText: '强制上传', danger: true });
+    if (ok) await pushNow(true, { force: true });
+  };
+  document.getElementById('cloudForcePullBtn').onclick = async () => {
+    if (!ready) { toast('请先点「保存设置」'); return; }
+    const ok = await confirmDialog({ title: '强制覆盖拉取', message: '将丢弃本机独有数据，完全变成云端内容。\n确定继续？', confirmText: '强制拉取', danger: true });
+    if (ok) await pullNow(true, { force: true });
   };
 }
 
