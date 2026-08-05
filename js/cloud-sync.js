@@ -229,8 +229,16 @@ export async function initCloud() {
 }
 
 // 读取远端文件（wb-sync 分支）→ { sha, ts, data } 或 null（文件不存在）
+// 加 cache-busting：CORS 代理或浏览器可能缓存 GitHub API 响应，导致拉取到旧文件。
 async function readRemote() {
-  const res = await ghFetch(apiUrl(SYNC_BRANCH), { headers: ghHeaders() });
+  const base = apiUrl(SYNC_BRANCH);
+  const url = base + (base.includes('?') ? '&' : '?') + '_cb=' + Date.now();
+  const res = await ghFetch(url, {
+    headers: ghHeaders({
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache'
+    })
+  });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error('读取云端失败：' + res.status);
   const json = await res.json();
@@ -252,7 +260,8 @@ async function writeRemote() {
   const newData = Object.assign({}, rData);
   let pushed = 0;
   for (const [key, value] of Object.entries(local)) {
-    if (key === CONFIG_KEY || key === TS_KEY) continue;
+    // 配置、时间戳、同步日志都是设备本地状态，不需要跨设备同步
+    if (key === CONFIG_KEY || key === TS_KEY || key === SYNC_LOG_KEY) continue;
     const hasRemote = Object.prototype.hasOwnProperty.call(rData, key);
     const sameValue = hasRemote && JSON.stringify(rData[key]) === JSON.stringify(value);
     // 只要远端没有，或内容确实不同，就纳入本次手动上传。
@@ -283,6 +292,7 @@ export async function pullAll() {
   if (!ready) return 0;
   const remote = await readRemote();
   if (!remote) return 0;
+  console.info('[cloud-sync] 读取远端文件', { sha: remote.sha, keys: Object.keys(remote.data).length });
   const localTs = loadTs();
   let updated = 0;
   for (const [key, value] of Object.entries(remote.data)) {
@@ -337,7 +347,7 @@ export async function pullNow(showToast = true) {
     // 关闭设置弹窗并刷新当前页面，让拉取的数据立即显示（无需重启）
     try { closeModal(); } catch (e) {}
     window.dispatchEvent(new Event('wb-data-synced'));
-    if (showToast) toast(pulled > 0 ? `已从云端拉取 ${pulled} 条` : '云端没有新数据');
+    if (showToast) toast(pulled > 0 ? `已从云端拉取 ${pulled} 条` : '云端数据与本地一致（无更新）');
     return pulled;
   } catch (e) {
     console.error('pullNow failed', e);

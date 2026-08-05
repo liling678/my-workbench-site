@@ -3,11 +3,19 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v26';
-export const APP_DATE = '2026-08-04';
+export const APP_VERSION = 'v27';
+export const APP_DATE = '2026-08-05';
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v27', date: '2026-08-05',
+    items: [
+      '修复「电脑上传后手机拉取提示没有新数据」：给云端读取增加 cache-busting 与 no-cache 头，避免 CORS 代理/浏览器缓存返回旧文件',
+      '同步日志（cloud_sync_log）不再随数据一起同步，各设备保留自己的上传/拉取记录',
+      '拉取无更新时提示改为「云端数据与本地一致（无更新）」，减少误判',
+    ],
+  },
   {
     version: 'v26', date: '2026-08-04',
     items: [
