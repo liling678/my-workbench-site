@@ -1,5 +1,5 @@
 // sw.js — 工作台 PWA 离线缓存（单页应用外壳）
-const CACHE = 'wb-app-v27';
+const CACHE = 'wb-app-v28';
 
 // 预缓存核心外壳，保证首次安装后即可离线
 const SHELL = [
@@ -60,17 +60,17 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // 其他同源静态资源：stale-while-revalidate（先返回缓存，后台更新，下次即新）
+  // 其他同源静态资源：network-first（联网时永远返回最新代码，避免 PWA 一直跑旧 JS），
+  // 离线时回退缓存。这样每次 SW 更新 + 页面刷新都能立即用上新逻辑（例如 cloud-sync 修复）。
   e.respondWith(
-    caches.match(req).then((cached) => {
-      const network = fetch(req).then((res) => {
+    fetch(req)
+      .then((res) => {
         if (res && res.status === 200) {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put(req, copy));
         }
         return res;
-      }).catch(() => cached);
-      return cached || network;
-    })
+      })
+      .catch(() => caches.match(req))
   );
 });

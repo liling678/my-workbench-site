@@ -228,7 +228,10 @@ export async function initCloud() {
   }
 }
 
-// 读取远端文件（wb-sync 分支）→ { sha, ts, data } 或 null（文件不存在）
+// 读取远端文件（wb-sync 分支）
+// 返回：
+//   { notFound: true }            —— 文件/分支不存在（404，或代理把 404 伪装成 200 时通过 message 识别）
+//   { sha, ts, data, raw }        —— 正常
 // 加 cache-busting：CORS 代理或浏览器可能缓存 GitHub API 响应，导致拉取到旧文件。
 async function readRemote() {
   const base = apiUrl(SYNC_BRANCH);
@@ -239,12 +242,25 @@ async function readRemote() {
       'Pragma': 'no-cache'
     })
   });
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error('读取云端失败：' + res.status);
-  const json = await res.json();
+  // 明确 404：文件不存在
+  if (res.status === 404) return { notFound: true };
+  if (!res.ok) throw new Error('读取云端失败：HTTP ' + res.status);
+  let json;
+  try { json = await res.json(); }
+  catch (e) { throw new Error('云端返回的不是合法 JSON（很可能代理失效/返回了错误页）'); }
+  // 部分代理会把 404 伪装成 200 + 错误 JSON，这里二次识别
+  if (json && typeof json.message === 'string' && /not found|no such|does not exist/i.test(json.message)) {
+    return { notFound: true };
+  }
+  if (json && json.message && /bad credentials|401/i.test(json.message)) {
+    throw new Error('GitHub Token 无效（401），请重新生成并保存');
+  }
+  if (typeof json.content !== 'string') {
+    throw new Error('云端返回异常：缺少 content 字段（代理可能被拦截）' + JSON.stringify(json).slice(0, 120));
+  }
   let parsed = {};
   try { parsed = JSON.parse(b64decode(json.content)); } catch (e) { parsed = {}; }
-  return { sha: json.sha, ts: parsed.ts || {}, data: parsed.data || {} };
+  return { sha: json.sha, ts: parsed.ts || {}, data: parsed.data || {}, raw: json };
 }
 
 // 把本地数据合并写入远端（逐 key last-write-wins）
@@ -254,8 +270,9 @@ async function writeRemote() {
   const localTs = loadTs();
   let remote = null;
   try { remote = await readRemote(); } catch (e) { remote = null; }
-  const rTs = remote ? remote.ts : {};
-  const rData = remote ? remote.data : {};
+  // readRemote 现在可能返回 { notFound:true }（文件/分支不存在），按「空远端」处理
+  const rTs = (remote && !remote.notFound) ? (remote.ts || {}) : {};
+  const rData = (remote && !remote.notFound) ? (remote.data || {}) : {};
   const newTs = Object.assign({}, rTs);
   const newData = Object.assign({}, rData);
   let pushed = 0;
@@ -277,7 +294,7 @@ async function writeRemote() {
     content: b64encode(JSON.stringify({ ts: newTs, data: newData })),
     branch: SYNC_BRANCH
   };
-  if (remote && remote.sha) body.sha = remote.sha;
+  if (remote && !remote.notFound && remote.sha) body.sha = remote.sha;
   const res = await ghFetch(apiUrl(SYNC_BRANCH), {
     method: 'PUT',
     headers: ghHeaders({ 'Content-Type': 'application/json' }),
@@ -288,10 +305,11 @@ async function writeRemote() {
 }
 
 // 拉取云端数据合并到本地（跨设备时钟不一致时用「值差异」兜底，避免漏拉）
+// 返回 { updated, notFound, remoteKeys, sha }
 export async function pullAll() {
-  if (!ready) return 0;
+  if (!ready) return { updated: 0, notFound: false };
   const remote = await readRemote();
-  if (!remote) return 0;
+  if (!remote || remote.notFound) return { updated: 0, notFound: true };
   console.info('[cloud-sync] 读取远端文件', { sha: remote.sha, keys: Object.keys(remote.data).length });
   const localTs = loadTs();
   let updated = 0;
@@ -307,7 +325,7 @@ export async function pullAll() {
     }
   }
   saveTs(localTs);
-  return updated;
+  return { updated, notFound: false, remoteKeys: Object.keys(remote.data).length, sha: remote.sha };
 }
 
 // 手动「上传到云端」：把本地数据推送到 GitHub
@@ -337,22 +355,31 @@ export async function pullNow(showToast = true) {
   if (!ready) { if (showToast) toast('云同步未启用，请先保存设置'); return 0; }
   try {
     setStatus('syncing');
-    const pulled = await pullAll();
+    const result = await pullAll();
     setStatus('ok');
     const log = loadSyncLog();
     log.lastPull = Date.now();
-    log.lastPullCount = pulled;
+    log.lastPullCount = result.updated;
     saveSyncLog(log);
     updateSyncLogView();
     // 关闭设置弹窗并刷新当前页面，让拉取的数据立即显示（无需重启）
     try { closeModal(); } catch (e) {}
     window.dispatchEvent(new Event('wb-data-synced'));
-    if (showToast) toast(pulled > 0 ? `已从云端拉取 ${pulled} 条` : '云端数据与本地一致（无更新）');
-    return pulled;
+    if (showToast) {
+      if (result.notFound) {
+        const cfg = loadCloudConfig() || {};
+        toast(`云端没有找到同步文件（404）。\n请确认手机端与电脑端的「仓库=${cfg.repo || '?'} / 同步码=${cfg.syncCode || '?'}」完全一致，且电脑端已成功上传到同一处`);
+      } else if (result.updated > 0) {
+        toast(`已从云端拉取 ${result.updated} 条`);
+      } else {
+        toast(`云端数据与本地一致（无更新）· 远端 ${result.remoteKeys} 个条目`);
+      }
+    }
+    return result.updated;
   } catch (e) {
     console.error('pullNow failed', e);
     setStatus('error');
-    if (showToast) toast('拉取失败：' + (e.message || '网络错误'));
+    if (showToast) toast('拉取失败：' + (e.message || '网络错误') + '\n（如网络被拦截，请在能连 GitHub 的网络下操作，或部署自有代理）');
     return 0;
   }
 }

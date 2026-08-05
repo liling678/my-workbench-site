@@ -3,11 +3,19 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v27';
+export const APP_VERSION = 'v28';
 export const APP_DATE = '2026-08-05';
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v28', date: '2026-08-05',
+    items: [
+      '修复「手机端升级到 v27 但拉取逻辑仍是旧版」：SW 对 js/css 改为 network-first，联网时永远返回最新代码，避免 PWA 一直跑缓存里的旧 cloud-sync.js',
+      '拉取诊断增强：明确区分「云端文件不存在(404)」与「数据一致」，404 时提示检查两设备的仓库/同步码是否一致',
+      '识别代理把 404 伪装成 200 空内容、以及代理返回非 JSON 的情况，给出明确报错而非误判为无数据',
+    ],
+  },
   {
     version: 'v27', date: '2026-08-05',
     items: [
