@@ -3,11 +3,19 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v30';
+export const APP_VERSION = 'v31';
 export const APP_DATE = '2026-08-05';
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v31', date: '2026-08-05',
+    items: [
+      '修复「每日计划没有记忆功能、看不到前面记录」：首页每日计划新增「日期切换 / 历史回看」，可翻看任意一天的计划和完成状态',
+      '每日任务、打卡、体重均按查看日期展示；历史日只读不可编辑（避免误改过去记录），点「今天」一键回到当日',
+      '自动任务（运动/心情/Biubiu 等）回看历史时按当天数据实时推断完成状态',
+    ],
+  },
   {
     version: 'v30', date: '2026-08-05',
     items: [

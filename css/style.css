@@ -448,6 +448,15 @@ input, textarea, select { font-family: inherit; }
   margin-bottom: 10px;
 }
 .task-section-title { font-size: 13px; font-weight: 500; color: var(--text-title); }
+.date-nav { display: flex; align-items: center; gap: 4px; }
+.date-nav-btn {
+  background: var(--bg-card); color: var(--text-muted);
+  border: 0.5px solid var(--border); border-radius: 6px;
+  padding: 3px 10px; font-size: 12px; line-height: 1;
+  cursor: pointer; transition: all 0.15s;
+}
+.date-nav-btn:active { background: var(--primary); color: white; border-color: var(--primary); }
+.date-nav-btn.disabled, .date-nav-btn[disabled] { opacity: 0.4; cursor: not-allowed; }
 .task-add-btn {
   font-size: 11px; color: var(--primary);
   border: 0.5px solid var(--primary-light); border-radius: 6px;

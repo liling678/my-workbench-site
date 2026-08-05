@@ -39,6 +39,15 @@ const COUNTDOWN_KEY = 'countdown_events';
 
 // 当前激活的任务tab
 let activeTaskTab = 'daily';
+// 当前查看的日期（null = 今天）。用于历史回看，让每日计划有「记忆」可翻看
+let viewDateKey = null;
+
+// 在给定日期 key 上偏移 n 天，返回新的 YYYY-MM-DD
+function shiftDateKey(key, delta) {
+  const d = new Date(key + 'T00:00:00');
+  d.setDate(d.getDate() + delta);
+  return dateKey(d);
+}
 
 // 每日好句：按日期固定，同一天不变化
 function getDailyQuote() {
@@ -116,15 +125,15 @@ function getGreeting() {
   return '夜深了';
 }
 
-function getTasks() {
+function getTasks(dk) {
   const all = Storage.get(TASK_KEY, {});
-  const tk = todayKey();
-  return all[tk] || [];
+  const key = dk || todayKey();
+  return all[key] || [];
 }
 
-function saveTasks(tasks) {
+function saveTasks(tasks, dk) {
   const all = Storage.get(TASK_KEY, {});
-  all[todayKey()] = tasks;
+  all[dk || todayKey()] = tasks;
   Storage.set(TASK_KEY, all);
 }
 
@@ -144,24 +153,24 @@ function saveWeight(weight) {
   Storage.set(WEIGHT_KEY, records);
 }
 
-function getCheckins() {
+function getCheckins(dk) {
   const all = Storage.get(CHECKIN_KEY, {});
-  return all[todayKey()] || {};
+  return all[dk || todayKey()] || {};
 }
 
-function saveCheckin(itemId, detail) {
+function saveCheckin(itemId, detail, dk) {
   const all = Storage.get(CHECKIN_KEY, {});
-  const tk = todayKey();
-  if (!all[tk]) all[tk] = {};
-  all[tk][itemId] = { detail, time: Date.now() };
+  const key = dk || todayKey();
+  if (!all[key]) all[key] = {};
+  all[key][itemId] = { detail, time: Date.now() };
   Storage.set(CHECKIN_KEY, all);
 }
 
-function removeCheckin(itemId) {
+function removeCheckin(itemId, dk) {
   const all = Storage.get(CHECKIN_KEY, {});
-  const tk = todayKey();
-  if (all[tk]) {
-    delete all[tk][itemId];
+  const key = dk || todayKey();
+  if (all[key]) {
+    delete all[key][itemId];
     Storage.set(CHECKIN_KEY, all);
   }
 }
@@ -202,8 +211,8 @@ function getCheckinStreak() {
   return streak;
 }
 
-function getTaskStats() {
-  const tasks = getTasks();
+function getTaskStats(dk) {
+  const tasks = getTasks(dk);
   const done = tasks.filter(t => t.done).length;
   const total = tasks.length;
   const rate = total > 0 ? Math.round(done / total * 100) : 0;
@@ -211,9 +220,10 @@ function getTaskStats() {
 }
 
 // ====== 自动拉取任务（分日常/工作/学习三类）======
-function getAutoTasks() {
+// dk：查看的日期（默认今天）。回看历史时用该日的数据判断自动任务是否已完成
+function getAutoTasks(dk) {
   const tasks = [];
-  const tk = todayKey();
+  const tk = dk || todayKey();
 
   // 日常类
   const exerciseData = Storage.get('exercise_records', []);
@@ -357,13 +367,18 @@ function renderTaskTabContent(tasks, cat) {
 export function initDashboard(container) {
   const quote = getDailyQuote();
   const greeting = getGreeting();
-  const stats = getTaskStats();
+  // 当前查看的日期：viewDateKey 非空则为历史日，否则今天
+  const viewKey = viewDateKey || todayKey();
+  const isHistory = !!viewDateKey && viewDateKey !== todayKey();
+  const stats = getTaskStats(viewKey);
   const weights = getLast7DaysWeights();
-  const todayWeight = weights[6].weight;
-  const checkins = getCheckins();
+  const allWeights = getWeights();
+  const viewWeightRec = allWeights.find(r => r.date === viewKey);
+  const todayWeight = viewWeightRec ? viewWeightRec.weight : null;
+  const checkins = getCheckins(viewKey);
   const streak = getCheckinStreak();
-  const tasks = getTasks();
-  const autoTasks = getAutoTasks();
+  const tasks = getTasks(viewKey);
+  const autoTasks = getAutoTasks(viewKey);
 
   // 合并自动任务和手动任务
   const manualIds = new Set(tasks.map(t => t.id));
@@ -378,14 +393,15 @@ export function initDashboard(container) {
   const diffToTarget = (!isNaN(tw) && tw > 0) ? (tw - weightTarget) : null;
 
   const now = new Date();
-  const dateStr = `${now.getMonth() + 1}\u6708${now.getDate()}\u65E5 \u00B7 \u5468${'\u65E5\u4E00\u4E8C\u4E09\u56DB\u4E94\u516D'[now.getDay()]}`;
+  const viewDate = new Date(viewKey + 'T00:00:00');
+  const dateStr = `${viewDate.getMonth() + 1}\u6708${viewDate.getDate()}\u65E5 \u00B7 \u5468${'\u65E5\u4E00\u4E8C\u4E09\u56DB\u4E94\u516D'[viewDate.getDay()]}`;
 
   container.innerHTML = `
     <div class="greeting-card">
       <div class="greeting-top">
         <div>
           <div class="greeting-name">${greeting}\uFF0C\u6817\u5706\u5706</div>
-          <div class="greeting-date">${dateStr} \u00B7 \u4ECA\u65E5\u6709 ${stats.total} \u9879\u4EFB\u52A1</div>
+          <div class="greeting-date">${dateStr} \u00B7 ${isHistory ? '\u5F53\u65E5' : '\u4ECA\u65E5'}\u6709 ${stats.total} \u9879\u4EFB\u52A1${isHistory ? ' \u00B7 \u5386\u53F2\u8BB0\u5F55' : ''}</div>
         </div>
         <div class="greeting-sync" id="dashSyncBtn" style="cursor:pointer">${loadCloudConfig() ? "\u5DF2\u914D\u7F6E" : "\u4E91\u540C\u6B65"}</div>
       </div>
@@ -475,7 +491,12 @@ export function initDashboard(container) {
     </div>
 
     <div class="task-section-head">
-      <span class="task-section-title">\u6BCF\u65E5\u8BA1\u5212</span>
+      <span class="task-section-title">${isHistory ? (viewDate.getMonth() + 1) + '\u6708' + viewDate.getDate() + '\u65E5 \u8BA1\u5212' : '\u6BCF\u65E5\u8BA1\u5212'}</span>
+      <div class="date-nav">
+        <button class="date-nav-btn" id="datePrev" title="\u524D\u4E00\u5929">\u2039</button>
+        <button class="date-nav-btn${isHistory ? '' : ' disabled'}" id="dateToday" ${isHistory ? '' : 'disabled'}>\u4ECA\u5929</button>
+        <button class="date-nav-btn" id="dateNext" title="\u540E\u4E00\u5929" ${viewKey >= todayKey() ? 'disabled' : ''}>\u203A</button>
+      </div>
     </div>
 
     <div class="task-tabs">
@@ -490,6 +511,7 @@ export function initDashboard(container) {
 
   // 体重修改按钮 → 跳转 body-care
   container.querySelector('#weightEditBtn').onclick = () => {
+    if (isHistory) { toast('\u5386\u53F2\u8BB0\u5F52\u4E0D\u53EF\u7F16\u8F91\uFF0C\u70B9\u300C\u4ECA\u5929\u300D\u56DE\u5230\u5F53\u65E5'); return; }
     const navBtn = document.querySelector('[data-module="body-care"]');
     if (navBtn) navBtn.click();
   };
@@ -503,11 +525,12 @@ export function initDashboard(container) {
   // 打卡
   container.querySelectorAll('[data-checkin]').forEach(el => {
     el.onclick = () => {
+      if (isHistory) { toast('\u5386\u53F2\u8BB0\u5F52\u4E0D\u53EF\u7F16\u8F91\uFF0C\u70B9\u300C\u4ECA\u5929\u300D\u56DE\u5230\u5F53\u65E5'); return; }
       const itemId = el.dataset.checkin;
       const item = CHECKIN_ITEMS.find(i => i.id === itemId);
-      const checkins = getCheckins();
+      const checkins = getCheckins(viewKey);
       if (checkins[itemId]) {
-        removeCheckin(itemId);
+        removeCheckin(itemId, viewKey);
         toast(`\u5DF2\u53D6\u6D88${item.name}\u6253\u5361`);
         initDashboard(container);
       } else {
@@ -527,18 +550,19 @@ export function initDashboard(container) {
   // 任务勾选
   container.querySelectorAll('[data-task-toggle]').forEach(el => {
     el.onclick = () => {
+      if (isHistory) { toast('\u5386\u53F2\u8BB0\u5F52\u4E0D\u53EF\u7F16\u8F91\uFF0C\u70B9\u300C\u4ECA\u5929\u300D\u56DE\u5230\u5F53\u65E5'); return; }
       const id = el.dataset.taskToggle;
-      const tasks = getTasks();
+      const tasks = getTasks(viewKey);
       let t = tasks.find(x => x.id === id);
       if (t) {
         t.done = !t.done;
-        saveTasks(tasks);
+        saveTasks(tasks, viewKey);
       } else {
         const autoTask = autoTasks.find(x => x.id === id);
         if (autoTask) {
           autoTask.done = true;
           tasks.push(autoTask);
-          saveTasks(tasks);
+          saveTasks(tasks, viewKey);
         }
       }
       initDashboard(container);
@@ -548,8 +572,9 @@ export function initDashboard(container) {
   // 任务编辑
   container.querySelectorAll('[data-task-edit]').forEach(el => {
     el.onclick = () => {
+      if (isHistory) { toast('\u5386\u53F2\u8BB0\u5F52\u4E0D\u53EF\u7F16\u8F91\uFF0C\u70B9\u300C\u4ECA\u5929\u300D\u56DE\u5230\u5F53\u65E5'); return; }
       const id = el.dataset.taskEdit;
-      const tasks = getTasks();
+      const tasks = getTasks(viewKey);
       const t = tasks.find(x => x.id === id);
       if (t) openEditTaskModal(t, container);
     };
@@ -558,13 +583,14 @@ export function initDashboard(container) {
   // 任务删除
   container.querySelectorAll('[data-task-del]').forEach(el => {
     el.onclick = async () => {
+      if (isHistory) { toast('\u5386\u53F2\u8BB0\u5F52\u4E0D\u53EF\u7F16\u8F91\uFF0C\u70B9\u300C\u4ECA\u5929\u300D\u56DE\u5230\u5F53\u65E5'); return; }
       if (!await confirmDialog({ title: '删除任务', message: '确定删除这个任务吗？', confirmText: '删除', danger: true })) return;
       const id = el.dataset.taskDel;
-      let tasks = getTasks();
+      let tasks = getTasks(viewKey);
       const t = tasks.find(x => x.id === id);
       if (t) {
         tasks = tasks.filter(x => x.id !== id);
-        saveTasks(tasks);
+        saveTasks(tasks, viewKey);
       } else {
         const ignored = Storage.get('ignored_auto_tasks', []);
         if (!ignored.includes(id)) ignored.push(id);
@@ -578,10 +604,19 @@ export function initDashboard(container) {
   // 分区添加任务
   container.querySelectorAll('[data-add-cat]').forEach(el => {
     el.onclick = () => {
+      if (isHistory) { toast('\u5386\u53F2\u8BB0\u5F52\u4E0D\u53EF\u7F16\u8F91\uFF0C\u70B9\u300C\u4ECA\u5929\u300D\u56DE\u5230\u5F53\u65E5'); return; }
       const cat = el.dataset.addCat;
       openAddTaskModal(container, cat);
     };
   });
+
+  // 日期切换 / 历史回看
+  const datePrev = container.querySelector('#datePrev');
+  const dateNext = container.querySelector('#dateNext');
+  const dateToday = container.querySelector('#dateToday');
+  if (datePrev) datePrev.onclick = () => { viewDateKey = shiftDateKey(viewKey, -1); initDashboard(container); };
+  if (dateNext && !dateNext.disabled) dateNext.onclick = () => { if (viewKey < todayKey()) { viewDateKey = shiftDateKey(viewKey, 1); initDashboard(container); } };
+  if (dateToday && !dateToday.disabled) dateToday.onclick = () => { viewDateKey = null; initDashboard(container); };
 }
 
 function openCountdownManage(container) {
