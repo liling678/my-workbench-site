@@ -245,35 +245,61 @@ async function fetchCommitDate() {
 }
 
 // 读取远端文件（wb-sync 分支）
+// 优先用 Git 数据库 API（支持 >1MB 大文件，照片等 base64 大体积数据不会被 Contents API 的 1MB 限制挡掉）；
+// 若 Git API 失败，回退到 Contents API。
 // 返回：
-//   { notFound: true }            —— 文件/分支不存在（404，或代理把 404 伪装成 200 时通过 message 识别）
-//   { sha, ts, data, raw }        —— 正常
-// 加 cache-busting：CORS 代理或浏览器可能缓存 GitHub API 响应，导致拉取到旧文件。
+//   { notFound: true }            —— 文件/分支不存在
+//   { sha, ts, data, raw, lastCommit } —— 正常
 async function readRemote() {
+  try {
+    return await readRemoteGit();
+  } catch (e) {
+    console.warn('[cloud-sync] Git API 读取失败，回退 Contents API：', e.message);
+    return await readRemoteContents();
+  }
+}
+
+// Git 数据库 API 读取（支持大文件）
+async function readRemoteGit() {
+  const c = loadCloudConfig();
+  const p = filePath();
+  const refRes = await ghFetch(`https://api.github.com/repos/${c.owner}/${c.repo}/git/refs/heads/${SYNC_BRANCH}`, { headers: ghHeaders() });
+  if (refRes.status === 404) return { notFound: true };
+  if (!refRes.ok) throw new Error('读取分支引用失败：HTTP ' + refRes.status);
+  const ref = await refRes.json();
+  const commitRes = await ghFetch(`https://api.github.com/repos/${c.owner}/${c.repo}/git/commits/${ref.object.sha}`, { headers: ghHeaders() });
+  if (!commitRes.ok) throw new Error('读取提交失败：HTTP ' + commitRes.status);
+  const commit = await commitRes.json();
+  const treeRes = await ghFetch(`https://api.github.com/repos/${c.owner}/${c.repo}/git/trees/${commit.tree.sha}?recursive=1`, { headers: ghHeaders() });
+  if (!treeRes.ok) throw new Error('读取树失败：HTTP ' + treeRes.status);
+  const tree = await treeRes.json();
+  const entry = (tree.tree || []).find(t => t.path === p);
+  if (!entry) return { notFound: true };
+  const blobRes = await ghFetch(`https://api.github.com/repos/${c.owner}/${c.repo}/git/blobs/${entry.sha}`, { headers: ghHeaders() });
+  if (!blobRes.ok) throw new Error('读取 blob 失败：HTTP ' + blobRes.status);
+  const blob = await blobRes.json();
+  if (typeof blob.content !== 'string') throw new Error('blob 内容异常（代理可能被拦截）');
+  let parsed = {};
+  try { parsed = JSON.parse(b64decode(blob.content)); } catch (e) { parsed = {}; }
+  const lastCommit = await fetchCommitDate();
+  return { sha: ref.object.sha, ts: parsed.ts || {}, data: parsed.data || {}, raw: blob, lastCommit };
+}
+
+// Contents API 读取（兜底，单文件 1MB 限制，仅用于 Git API 不可用时）
+async function readRemoteContents() {
   const base = apiUrl(SYNC_BRANCH);
   const url = base + (base.includes('?') ? '&' : '?') + '_cb=' + Date.now();
   const res = await ghFetch(url, {
-    headers: ghHeaders({
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
-      'Pragma': 'no-cache'
-    })
+    headers: ghHeaders({ 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache' })
   });
-  // 明确 404：文件不存在
   if (res.status === 404) return { notFound: true };
   if (!res.ok) throw new Error('读取云端失败：HTTP ' + res.status);
   let json;
   try { json = await res.json(); }
   catch (e) { throw new Error('云端返回的不是合法 JSON（很可能代理失效/返回了错误页）'); }
-  // 部分代理会把 404 伪装成 200 + 错误 JSON，这里二次识别
-  if (json && typeof json.message === 'string' && /not found|no such|does not exist/i.test(json.message)) {
-    return { notFound: true };
-  }
-  if (json && json.message && /bad credentials|401/i.test(json.message)) {
-    throw new Error('GitHub Token 无效（401），请重新生成并保存');
-  }
-  if (typeof json.content !== 'string') {
-    throw new Error('云端返回异常：缺少 content 字段（代理可能被拦截）' + JSON.stringify(json).slice(0, 120));
-  }
+  if (json && typeof json.message === 'string' && /not found|no such|does not exist/i.test(json.message)) return { notFound: true };
+  if (json && json.message && /bad credentials|401/i.test(json.message)) throw new Error('GitHub Token 无效（401），请重新生成并保存');
+  if (typeof json.content !== 'string') throw new Error('云端返回异常：缺少 content 字段（代理可能被拦截）' + JSON.stringify(json).slice(0, 120));
   let parsed = {};
   try { parsed = JSON.parse(b64decode(json.content)); } catch (e) { parsed = {}; }
   const lastCommit = await fetchCommitDate();
@@ -281,6 +307,8 @@ async function readRemote() {
 }
 
 // 把本地数据合并写入远端（逐 key last-write-wins）
+// 使用 Git 数据库 API 写入（创建 blob → tree → commit → 更新分支引用），单文件上限 100MB，
+// 彻底规避 Contents API 的 1MB 限制，照片等大体积 base64 数据也能同步。
 // opts.force=true：以本地为准，云端只保留本地有的键（清除云端独有、本地已删的键）
 async function writeRemote(opts = {}) {
   await ensureSyncBranch();
@@ -322,19 +350,51 @@ async function writeRemote(opts = {}) {
       }
     }
   }
-  const body = {
-    message: 'workbench sync ' + new Date().toISOString(),
-    content: b64encode(JSON.stringify({ ts: newTs, data: newData })),
-    branch: SYNC_BRANCH
-  };
-  if (remote && !remote.notFound && remote.sha) body.sha = remote.sha;
-  const res = await ghFetch(apiUrl(SYNC_BRANCH), {
-    method: 'PUT',
-    headers: ghHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify(body)
-  });
-  if (!res.ok) throw new Error('写入云端失败：' + res.status);
+  const contentB64 = b64encode(JSON.stringify({ ts: newTs, data: newData }));
+  await writeFileGit(contentB64);
   return pushed;
+}
+
+// 通过 Git 数据库 API 写入文件（支持大文件）：blob → tree → commit → 更新分支引用
+async function writeFileGit(contentB64) {
+  const c = loadCloudConfig();
+  const p = filePath();
+  // 1) 创建 blob
+  const blobRes = await ghFetch(`https://api.github.com/repos/${c.owner}/${c.repo}/git/blobs`, {
+    method: 'POST', headers: ghHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ content: contentB64, encoding: 'base64' })
+  });
+  if (!blobRes.ok) throw new Error('创建 blob 失败：' + blobRes.status);
+  const blob = await blobRes.json();
+  // 2) 取分支当前 HEAD 提交
+  const refRes = await ghFetch(`https://api.github.com/repos/${c.owner}/${c.repo}/git/refs/heads/${SYNC_BRANCH}`, { headers: ghHeaders() });
+  if (!refRes.ok) throw new Error('读取分支引用失败：' + refRes.status);
+  const ref = await refRes.json();
+  const baseCommitSha = ref.object.sha;
+  const commitRes = await ghFetch(`https://api.github.com/repos/${c.owner}/${c.repo}/git/commits/${baseCommitSha}`, { headers: ghHeaders() });
+  if (!commitRes.ok) throw new Error('读取提交失败：' + commitRes.status);
+  const baseCommit = await commitRes.json();
+  const baseTreeSha = baseCommit.tree.sha;
+  // 3) 创建 tree（以当前树为基，覆盖目标文件）
+  const treeRes = await ghFetch(`https://api.github.com/repos/${c.owner}/${c.repo}/git/trees`, {
+    method: 'POST', headers: ghHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ base_tree: baseTreeSha, tree: [{ path: p, mode: '100644', type: 'blob', sha: blob.sha }] })
+  });
+  if (!treeRes.ok) throw new Error('创建树失败：' + treeRes.status);
+  const newTree = await treeRes.json();
+  // 4) 创建 commit
+  const newCommitRes = await ghFetch(`https://api.github.com/repos/${c.owner}/${c.repo}/git/commits`, {
+    method: 'POST', headers: ghHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ message: 'workbench sync ' + new Date().toISOString(), tree: newTree.sha, parents: [baseCommitSha] })
+  });
+  if (!newCommitRes.ok) throw new Error('创建提交失败：' + newCommitRes.status);
+  const newCommit = await newCommitRes.json();
+  // 5) 更新分支引用指向新提交
+  const updRes = await ghFetch(`https://api.github.com/repos/${c.owner}/${c.repo}/git/refs/heads/${SYNC_BRANCH}`, {
+    method: 'PATCH', headers: ghHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ sha: newCommit.sha, force: true })
+  });
+  if (!updRes.ok) throw new Error('更新分支引用失败：' + updRes.status);
 }
 
 // 拉取云端数据合并到本地（跨设备时钟不一致时用「值差异」兜底，避免漏拉）
@@ -347,6 +407,7 @@ export async function pullAll(opts = {}) {
   console.info('[cloud-sync] 读取远端文件', { sha: remote.sha, keys: Object.keys(remote.data).length, lastCommit: remote.lastCommit });
   const localTs = loadTs();
   let updated = 0;
+  const failedWrites = [];   // 本地存储写入失败（配额不足）的键，用于提示用户
   if (opts.force) {
     // 强制覆盖：本地完全以云端为准，丢掉本地独有键
     const localAll = Storage.exportAll();
@@ -361,13 +422,14 @@ export async function pullAll(opts = {}) {
     const localVal = Storage.get(key, undefined);
     const sameValue = localVal !== undefined && JSON.stringify(localVal) === JSON.stringify(value);
     if (localVal === undefined || !sameValue) {
-      Storage.set(key, value);
+      const ok = Storage.set(key, value);   // 可能因本地存储配额不足而失败（多为照片等大体积数据）
+      if (!ok) failedWrites.push(key);
       localTs[key] = remote.ts[key] || Date.now();
       updated++;
     }
   }
   saveTs(localTs);
-  return { updated, notFound: false, remoteKeys: Object.keys(remote.data).length, sha: remote.sha, lastCommit: remote.lastCommit };
+  return { updated, notFound: false, remoteKeys: Object.keys(remote.data).length, sha: remote.sha, lastCommit: remote.lastCommit, failedWrites };
 }
 
 // 把 ISO 时间转成「MM-DD HH:mm」本地显示（给云端 commit 时间用）
@@ -431,7 +493,11 @@ export async function pullNow(showToast = true, opts = {}) {
         const cfg = loadCloudConfig() || {};
         toast(`云端没有找到同步文件（404）。\n请确认手机端与电脑端的「仓库=${cfg.repo || '?'} / 同步码=${cfg.syncCode || '?'}」完全一致，且电脑端已成功上传到同一处`);
       } else if (result.updated > 0) {
-        toast((opts.force ? `已强制覆盖拉取 ${result.updated} 条（以云端为准）` : `已从云端拉取 ${result.updated} 条`) + diagSuffix(result));
+        let msg = (opts.force ? `已强制覆盖拉取 ${result.updated} 条（以云端为准）` : `已从云端拉取 ${result.updated} 条`) + diagSuffix(result);
+        if (result.failedWrites && result.failedWrites.length) {
+          msg += `\n⚠️ 有 ${result.failedWrites.length} 条写入本机失败（多为照片等大体积数据，本地存储容量不足），请在电脑端压缩照片或减少照片数量后再同步`;
+        }
+        toast(msg);
       } else {
         toast(`云端数据与本地一致（无更新）` + diagSuffix(result) + `\n若你刚在电脑端改了数据，请先在电脑端点「⬆ 上传到云端」再拉取`);
       }

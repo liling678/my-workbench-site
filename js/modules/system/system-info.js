@@ -3,11 +3,19 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v29';
+export const APP_VERSION = 'v30';
 export const APP_DATE = '2026-08-05';
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v30', date: '2026-08-05',
+    items: [
+      '修复「其他数据能同步、照片拉不下来」：根因是 GitHub Contents API 单文件 1MB 限制，带照片的 JSON 超限被拒，云端只剩不含照片的旧数据',
+      '云端读写改用 Git 数据库 API（blob→tree→commit→更新引用），单文件上限 100MB，照片等大体积 base64 数据可正常同步',
+      '拉取新增「本地写入失败」检测：若手机端因 localStorage 配额不足导致照片等键写不进，会明确提示，不再静默丢失',
+    ],
+  },
   {
     version: 'v29', date: '2026-08-05',
     items: [
