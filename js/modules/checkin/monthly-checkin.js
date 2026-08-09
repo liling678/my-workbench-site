@@ -1,5 +1,5 @@
 // monthly-checkin.js — 月度每日打卡表（独立菜单）
-// 包含：总览目标(总体+年度) / 月度目标(含月度总结) / 阅读目标 / 每日打卡 / 统计
+// 包含：总览目标(总体+年度) / 月度目标(含月度总结) / 阅读目标 / 每日打卡(本周) / 打卡总览(整月) / 统计
 import { registerStandalone } from '../../registry.js';
 import { Storage } from '../../storage.js';
 import { toast, escapeHtml, confirmDialog } from '../../ui.js';
@@ -34,7 +34,12 @@ const PHASES = [
 const SPECIAL = [
   '周四加班当日可豁免「备考学习、运动」两项打卡，保留泡脚 + 早睡',
   '每周可设置 2 天宽松豁免日，避免焦虑摆烂',
+  '补卡规则：仅今日与昨日可打卡，更早的日期已锁定（灰色），避免拖延补卡',
 ];
+
+// —— 三态：空 → 完成 → 部分完成 → 未完成 → 空 ——
+const STATE_CYCLE = [null, 'done', 'partial', 'undone'];
+const STATE_ICON = { done: '✓', partial: '◑', undone: '✕' };
 
 const GOAL_KEY = 'checkin_goals';
 function loadGoals() {
@@ -61,7 +66,28 @@ function saveMonthly(ym, data) { const all = loadMonthlyAll(); all[ym] = data; S
 function gridKey(ym) { return 'checkin_grid_' + ym; }
 function loadGrid(ym) { return Storage.get(gridKey(ym), {}); }
 
+const NOTE_KEY = 'checkin_daynote';
+function noteKey(ym) { return NOTE_KEY + '_' + ym; }
+function loadNotes(ym) { return Storage.get(noteKey(ym), {}); }
+
 const WK = ['日', '一', '二', '三', '四', '五', '六'];
+
+function pad(n) { return String(n).padStart(2, '0'); }
+function ymOf(y, m) { return y + '-' + pad(m); }
+function ymdOf(y, m, d) { return y + '-' + pad(m) + '-' + pad(d); }
+
+// 某日期相对今天的状态：today / yesterday / past / future
+function dayRelation(y, m, d) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const dt = new Date(y, m - 1, d); dt.setHours(0, 0, 0, 0);
+  const diff = Math.round((today - dt) / 86400000);
+  if (diff < 0) return 'future';
+  if (diff === 0) return 'today';
+  if (diff === 1) return 'yesterday';
+  return 'past';
+}
+// 仅今日与昨日可补卡
+function isEditableDay(y, m, d) { const r = dayRelation(y, m, d); return r === 'today' || r === 'yesterday'; }
 
 // 把当月按"周一起始"切分为若干周，用于每周统计
 function getWeeks(y, m) {
@@ -69,10 +95,10 @@ function getWeeks(y, m) {
   const map = {};
   for (let d = 1; d <= days; d++) {
     const date = new Date(y, m - 1, d);
-    const dow = date.getDay(); // 0 周日 .. 6 周六
-    const diff = (dow === 0) ? -6 : (1 - dow); // 回到本周一
+    const dow = date.getDay();
+    const diff = (dow === 0) ? -6 : (1 - dow);
     const mon = new Date(y, m - 1, d + diff);
-    const key = mon.getFullYear() + '-' + (mon.getMonth() + 1) + '-' + mon.getDate();
+    const key = ymOf(mon.getFullYear(), mon.getMonth() + 1) + '-' + pad(mon.getDate());
     if (!map[key]) map[key] = { start: mon, end: mon, days: [] };
     map[key].days.push(d);
     map[key].end = date;
@@ -80,25 +106,92 @@ function getWeeks(y, m) {
   return Object.keys(map).sort().map((k, i) => ({ label: '第' + (i + 1) + '周', start: map[k].start, end: map[k].end, days: map[k].days }));
 }
 
+// 读取某 item 在某个月份的三态计数
+function countItemInMonth(itemN, ym) {
+  const g = (loadGrid(ym)[itemN]) || {};
+  let done = 0, partial = 0, undone = 0;
+  for (const k in g) {
+    if (g[k] === 'done') done++;
+    else if (g[k] === 'partial') partial++;
+    else if (g[k] === 'undone') undone++;
+  }
+  return { done, partial, undone };
+}
+
+// 通用：渲染一个打卡表格
+// dates: [{y,m,d,dateStr,wkend,editable,locked}]
+// countYM: 用于「当月完成」统计的月份
+function buildTable(items, dates, countYM) {
+  let headDays = '';
+  dates.forEach(dt => {
+    const cls = 'ck-th ck-day' + (dt.wkend ? ' ck-wkend' : '') + (dt.locked ? ' ck-locked' : '');
+    headDays += `<th class="${cls}"><div class="ck-d">${dt.d}</div><div class="ck-w">${WK[dt.wd]}</div></th>`;
+  });
+
+  let rows = '';
+  items.forEach(it => {
+    const c = countItemInMonth(it.n, countYM);
+    let cells = '';
+    dates.forEach(dt => {
+      const g = (loadGrid(ymOf(dt.y, dt.m))[it.n]) || {};
+      const st = g[dt.dateStr] || null;
+      const cellCls = 'ck-cell' + (st ? ' ck-' + st : '') + (dt.locked ? ' ck-locked' : '');
+      cells += `<td class="ck-td${(dt.wkend ? ' ck-wkend' : '') + (dt.locked ? ' ck-locked' : '')}"><button class="${cellCls}" data-item="${it.n}" data-date="${dt.dateStr}" ${dt.locked ? 'disabled' : ''} title="${escapeHtml(it.name)}">${st ? STATE_ICON[st] : ''}</button></td>`;
+    });
+    const countHtml = `<span class="ck-done-n">${c.done}</span>${c.partial ? `<span class="ck-part-n"> ◑${c.partial}</span>` : ''}`;
+    rows += `<tr>
+      <td class="ck-td ck-idx">${it.n}</td>
+      <td class="ck-td ck-item" title="${escapeHtml(it.rule)}">${escapeHtml(it.name)}</td>
+      ${cells}
+      <td class="ck-td ck-count">${countHtml}</td>
+    </tr>`;
+  });
+
+  // 每日完成合计（done+partial 计为 1）
+  let sumCells = '';
+  const perDay = {};
+  items.forEach(it => {
+    dates.forEach(dt => {
+      const g = (loadGrid(ymOf(dt.y, dt.m))[it.n]) || {};
+      const st = g[dt.dateStr];
+      if (st === 'done' || st === 'partial') perDay[dt.dateStr] = (perDay[dt.dateStr] || 0) + 1;
+    });
+  });
+  dates.forEach(dt => {
+    sumCells += `<td class="ck-td ck-sumday${(dt.wkend ? ' ck-wkend' : '') + (dt.locked ? ' ck-locked' : '')}">${perDay[dt.dateStr] || ''}</td>`;
+  });
+
+  return `
+    <div class="ck-table-wrap">
+      <table class="ck-table">
+        <thead><tr><th class="ck-th ck-idx">序号</th><th class="ck-th ck-item">打卡目标</th>${headDays}<th class="ck-th ck-count">当月完成</th></tr></thead>
+        <tbody>${rows}
+          <tr class="ck-sumrow"><td class="ck-td ck-idx" colspan="2">每日完成合计</td>${sumCells}<td class="ck-td ck-count"></td></tr>
+        </tbody>
+      </table>
+    </div>`;
+}
+
 export function initMonthlyCheckin() {
   registerStandalone('monthly-checkin', {
     title: '月度打卡表',
     icon: checkinIcon,
     render(container) {
-      let tab = 'overview';
-      let curYM = (() => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); })();
+      let tab = 'today';
+      let curYM = (() => { const d = new Date(); return ymOf(d.getFullYear(), d.getMonth() + 1); })();
       let itemsEditMode = false;
 
       container.innerHTML = `
         <div class="page-head">
           <div class="page-title">月度打卡表</div>
-          <div class="page-desc">总览目标 · 月度目标 · 阅读目标 · 每日打卡 · 统计</div>
+          <div class="page-desc">总览目标 · 月度目标 · 阅读目标 · 每日打卡 · 打卡总览 · 统计</div>
         </div>
         <div class="ck-tabs">
-          <button class="ck-tab active" data-tab="overview">总览目标</button>
+          <button class="ck-tab" data-tab="overview">总览目标</button>
           <button class="ck-tab" data-tab="monthly">月度目标</button>
           <button class="ck-tab" data-tab="reading">阅读目标</button>
-          <button class="ck-tab" data-tab="table">每日打卡</button>
+          <button class="ck-tab active" data-tab="today">每日打卡</button>
+          <button class="ck-tab" data-tab="monthedit">打卡总览</button>
           <button class="ck-tab" data-tab="stats">统计</button>
         </div>
         <div id="ckTabBody"></div>
@@ -119,12 +212,13 @@ export function initMonthlyCheckin() {
         if (tab === 'overview') body.innerHTML = renderOverview();
         else if (tab === 'monthly') body.innerHTML = renderMonthly();
         else if (tab === 'reading') body.innerHTML = renderReading();
-        else if (tab === 'table') body.innerHTML = renderTableTab();
+        else if (tab === 'today') body.innerHTML = renderToday();
+        else if (tab === 'monthedit') body.innerHTML = renderMonthEdit();
         else body.innerHTML = renderStats();
         bindTab();
       }
 
-      // —— 总览目标：总体目标 + 年度目标 合并一页，各自独立编辑 ——
+      // —— 总览目标：总体目标 + 年度目标 合并一页 ——
       function renderOverview() {
         const g = loadGoals();
         return `
@@ -149,7 +243,6 @@ export function initMonthlyCheckin() {
         </div>`;
       }
 
-      // —— 月度目标：月度目标 + 月度总结（按月存储，原表格的月度总结列移到这里）——
       function renderMonthly() {
         const mm = loadMonthly(curYM);
         return `
@@ -166,50 +259,30 @@ export function initMonthlyCheckin() {
           </div>`;
       }
 
-      // —— 每日打卡：可勾选表格（已移除月度总结列）——
-      function renderTableTab() {
+      // —— 每日打卡：本周 7 天视图 + 今日记录 ——
+      function renderToday() {
         const items = loadItems();
-        const [y, m] = curYM.split('-').map(Number);
-        const days = new Date(y, m, 0).getDate();
-        const grid = loadGrid(curYM);
-
-        let headDays = '';
-        for (let d = 1; d <= days; d++) {
-          const wd = new Date(y, m - 1, d).getDay();
-          const wkend = (wd === 0 || wd === 6) ? ' ck-wkend' : '';
-          headDays += `<th class="ck-th ck-day${wkend}"><div class="ck-d">${d}</div><div class="ck-w">${WK[wd]}</div></th>`;
+        // 本周一 ~ 周日
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const dow = today.getDay();
+        const monOffset = (dow === 0) ? -6 : (1 - dow);
+        const mon = new Date(today); mon.setDate(today.getDate() + monOffset);
+        const dates = [];
+        for (let i = 0; i < 7; i++) {
+          const dt = new Date(mon); dt.setDate(mon.getDate() + i);
+          const y = dt.getFullYear(), m = dt.getMonth() + 1, d = dt.getDate();
+          const rel = dayRelation(y, m, d);
+          dates.push({ y, m, d, dateStr: ymdOf(y, m, d), wd: dt.getDay(), wkend: (dt.getDay() === 0 || dt.getDay() === 6), editable: isEditableDay(y, m, d), locked: (rel === 'past' || rel === 'future') });
         }
+        const countYM = ymOf(today.getFullYear(), today.getMonth() + 1);
+        const sun = dates[6];
+        const weekTitle = `本周 ${mon.getMonth() + 1}.${mon.getDate()} - ${sun.m}.${sun.d}`;
 
-        let rows = '';
-        items.forEach(it => {
-          const itemGrid = grid[it.n] || {};
-          let cells = '';
-          let doneCount = 0;
-          for (let d = 1; d <= days; d++) {
-            const wd = new Date(y, m - 1, d).getDay();
-            const wkend = (wd === 0 || wd === 6) ? ' ck-wkend' : '';
-            const on = itemGrid[d] ? ' on' : '';
-            cells += `<td class="ck-td${wkend}"><button class="ck-cell${on}" data-item="${it.n}" data-day="${d}" title="${escapeHtml(it.name)}"></button></td>`;
-            if (itemGrid[d]) doneCount++;
-          }
-          rows += `<tr>
-            <td class="ck-td ck-idx">${it.n}</td>
-            <td class="ck-td ck-item" title="${escapeHtml(it.rule)}">${escapeHtml(it.name)}</td>
-            ${cells}
-            <td class="ck-td ck-count">${doneCount}</td>
-          </tr>`;
-        });
+        // 今日记录
+        const tY = today.getFullYear(), tM = today.getMonth() + 1, tD = today.getDate();
+        const tNote = (loadNotes(ymOf(tY, tM))[ymdOf(tY, tM, tD)]) || '';
 
-        let sumCells = '';
-        const perDay = {};
-        items.forEach(it => { const ig = grid[it.n] || {}; for (const k in ig) perDay[k] = (perDay[k] || 0) + 1; });
-        for (let d = 1; d <= days; d++) {
-          const wd = new Date(y, m - 1, d).getDay();
-          const wkend = (wd === 0 || wd === 6) ? ' ck-wkend' : '';
-          sumCells += `<td class="ck-td ck-sumday${wkend}">${perDay[d] || ''}</td>`;
-        }
-
-        // 打卡项目管理（可编辑）
+        // 项目管理
         let rulesHtml;
         if (itemsEditMode) {
           rulesHtml = `<div class="ck-card">
@@ -231,7 +304,6 @@ export function initMonthlyCheckin() {
         }
 
         return `
-          ${monthNavHtml()}
           ${rulesHtml}
           <div class="ck-card">
             <div class="ck-card-title">🗓 分阶段备注</div>
@@ -239,28 +311,38 @@ export function initMonthlyCheckin() {
             <div class="ck-special">${SPECIAL.map(s => '· ' + escapeHtml(s)).join('<br>')}</div>
           </div>
           <div class="ck-card">
-            <div class="ck-card-title">✅ 每日打卡表（点格子打勾）</div>
-            <div class="ck-table-wrap">
-              <table class="ck-table">
-                <thead>
-                  <tr>
-                    <th class="ck-th ck-idx">序号</th>
-                    <th class="ck-th ck-item">打卡目标</th>
-                    ${headDays}
-                    <th class="ck-th ck-count">当月完成</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${rows}
-                  <tr class="ck-sumrow">
-                    <td class="ck-td ck-idx" colspan="2">每日完成合计</td>
-                    ${sumCells}
-                    <td class="ck-td ck-count"></td>
-                  </tr>
-                </tbody>
-              </table>
+            <div class="ck-card-head"><div class="ck-card-title">✅ 每日打卡表 · ${weekTitle}</div>
+              <div class="ck-legend"><span class="ck-lg ck-lg-done">✓完成</span><span class="ck-lg ck-lg-part">◑部分</span><span class="ck-lg ck-lg-undone">✕未完成</span></div>
             </div>
-            <div class="ck-hint">周末列已用浅绿标注；点格子即打勾，数据按月独立保存，可长期复用。月度总结已移至「月度目标」页。</div>
+            <div class="ck-hint">点格子循环切换：空→完成→部分→未完成。仅<b>今日与昨日</b>可打卡，更早日期已锁定（灰色）。每周一自动切换到当周。</div>
+            ${buildTable(items, dates, countYM)}
+          </div>
+          <div class="ck-card">
+            <div class="ck-card-head"><div class="ck-card-title">📝 今日记录（${tM}月${tD}日）</div><button class="btn btn-primary btn-sm" id="ckSaveNote">💾 保存记录</button></div>
+            <div class="ck-card-desc">记录今天的完成情况、学习状态、未达成原因等</div>
+            <textarea class="ck-note-text" id="ckNote" placeholder="例如：今日备考 2h，软考碎片 30min；运动未完成（加班太累）；明日补上…">${escapeHtml(tNote)}</textarea>
+          </div>`;
+      }
+
+      // —— 打卡总览：整月完整表格，实时更新 ——
+      function renderMonthEdit() {
+        const items = loadItems();
+        const [y, m] = curYM.split('-').map(Number);
+        const days = new Date(y, m, 0).getDate();
+        const dates = [];
+        for (let d = 1; d <= days; d++) {
+          const rel = dayRelation(y, m, d);
+          dates.push({ y, m, d, dateStr: ymdOf(y, m, d), wd: new Date(y, m - 1, d).getDay(), wkend: (new Date(y, m - 1, d).getDay() === 0 || new Date(y, m - 1, d).getDay() === 6), editable: isEditableDay(y, m, d), locked: (rel === 'past' || rel === 'future') });
+        }
+
+        return `
+          ${monthNavHtml()}
+          <div class="ck-card">
+            <div class="ck-card-head"><div class="ck-card-title">📋 ${y}年${m}月 完整打卡总览</div>
+              <div class="ck-legend"><span class="ck-lg ck-lg-done">✓完成</span><span class="ck-lg ck-lg-part">◑部分</span><span class="ck-lg ck-lg-undone">✕未完成</span></div>
+            </div>
+            <div class="ck-hint">整月实时视图：灰色锁定日期（早于昨日的过往日 / 未来日）不可打卡；仅今日与昨日可补卡。底部「每日完成合计」随打卡实时更新。</div>
+            ${buildTable(items, dates, curYM)}
           </div>`;
       }
 
@@ -269,52 +351,60 @@ export function initMonthlyCheckin() {
         const items = loadItems();
         const [y, m] = curYM.split('-').map(Number);
         const days = new Date(y, m, 0).getDate();
-        const grid = loadGrid(curYM);
         const weeks = getWeeks(y, m);
+        const todayDate = (new Date().getFullYear() === y && (new Date().getMonth() + 1) === m) ? new Date().getDate() : days;
+        const elapsed = (new Date().getFullYear() === y && (new Date().getMonth() + 1) === m) ? todayDate : days;
 
-        let total = 0;
+        let doneTotal = 0, partTotal = 0, undoneTotal = 0;
         const perItem = {};
         items.forEach(it => {
-          const ig = grid[it.n] || {};
-          let c = 0; for (const k in ig) { c++; total++; }
-          perItem[it.n] = c;
+          const g = (loadGrid(curYM)[it.n]) || {};
+          let d = 0, p = 0, u = 0;
+          for (const k in g) { if (g[k] === 'done') d++; else if (g[k] === 'partial') p++; else if (g[k] === 'undone') u++; }
+          perItem[it.n] = { done: d, partial: p, undone: u };
+          doneTotal += d; partTotal += p; undoneTotal += u;
         });
 
-        const avg = days ? (total / days).toFixed(1) : '0';
-        const coverage = (items.length * days) ? Math.round(total / (items.length * days) * 100) : 0;
+        const weighted = doneTotal + partTotal * 0.5;
+        const coverage = (items.length * days) ? Math.round(weighted / (items.length * days) * 100) : 0;
+        const avg = elapsed ? (weighted / elapsed).toFixed(1) : '0';
 
         const weekRows = weeks.map(w => {
-          let wt = 0;
-          items.forEach(it => { const ig = grid[it.n] || {}; w.days.forEach(d => { if (ig[d]) wt++; }); });
-          const wavg = w.days.length ? (wt / w.days.length).toFixed(1) : '0';
+          let wt = 0, wp = 0;
+          items.forEach(it => { const g = (loadGrid(curYM)[it.n]) || {}; w.days.forEach(d => { const s = g[ymdOf(y, m, d)]; if (s === 'done') wt++; else if (s === 'partial') wp++; }); });
+          const wavg = w.days.length ? ((wt + wp * 0.5) / w.days.length).toFixed(1) : '0';
           const sM = w.start.getMonth() + 1, sD = w.start.getDate(), eM = w.end.getMonth() + 1, eD = w.end.getDate();
-          return `<tr><td class="ck-td">${w.label}</td><td class="ck-td">${sM}.${sD} - ${eM}.${eD}</td><td class="ck-td">${wt}</td><td class="ck-td">${wavg}</td></tr>`;
+          return `<tr><td class="ck-td">${w.label}</td><td class="ck-td">${sM}.${sD} - ${eM}.${eD}</td><td class="ck-td">${wt}</td><td class="ck-td">${wp}</td><td class="ck-td">${wavg}</td></tr>`;
         }).join('');
 
-        const itemRows = items.map(it => `<tr><td class="ck-td ck-idx">${it.n}</td><td class="ck-td ck-item">${escapeHtml(it.name)}</td><td class="ck-td">${perItem[it.n] || 0}</td><td class="ck-td">${days ? Math.round((perItem[it.n] || 0) / days * 100) : 0}%</td></tr>`).join('');
+        const itemRows = items.map(it => {
+          const c = perItem[it.n];
+          return `<tr><td class="ck-td ck-idx">${it.n}</td><td class="ck-td ck-item">${escapeHtml(it.name)}</td><td class="ck-td">${c.done}</td><td class="ck-td">${c.partial}</td><td class="ck-td">${c.undone}</td><td class="ck-td">${days ? Math.round((c.done + c.partial * 0.5) / days * 100) : 0}%</td></tr>`;
+        }).join('');
 
         return `
           ${monthNavHtml()}
           <div class="ck-stats-cards">
-            <div class="ck-stat"><div class="ck-stat-num">${total}</div><div class="ck-stat-label">当月总打卡</div></div>
-            <div class="ck-stat"><div class="ck-stat-num">${avg}</div><div class="ck-stat-label">日均完成项</div></div>
+            <div class="ck-stat"><div class="ck-stat-num">${doneTotal}</div><div class="ck-stat-label">完成次数</div></div>
+            <div class="ck-stat"><div class="ck-stat-num">${partTotal}</div><div class="ck-stat-label">部分次数</div></div>
             <div class="ck-stat"><div class="ck-stat-num">${coverage}%</div><div class="ck-stat-label">打卡覆盖率</div></div>
+            <div class="ck-stat"><div class="ck-stat-num">${avg}</div><div class="ck-stat-label">日均完成项</div></div>
           </div>
           <div class="ck-card">
             <div class="ck-card-title">📊 每周打卡统计（${curYM}）</div>
             <div class="ck-table-wrap"><table class="ck-table ck-stat-table">
-              <thead><tr><th class="ck-th">周次</th><th class="ck-th">日期范围</th><th class="ck-th">完成项</th><th class="ck-th">日均</th></tr></thead>
+              <thead><tr><th class="ck-th">周次</th><th class="ck-th">日期范围</th><th class="ck-th">完成</th><th class="ck-th">部分</th><th class="ck-th">日均</th></tr></thead>
               <tbody>${weekRows}</tbody>
             </table></div>
           </div>
           <div class="ck-card">
             <div class="ck-card-title">📈 各项目月度完成（${curYM}）</div>
             <div class="ck-table-wrap"><table class="ck-table ck-stat-table">
-              <thead><tr><th class="ck-th ck-idx">序号</th><th class="ck-th ck-item">打卡目标</th><th class="ck-th">当月完成(天)</th><th class="ck-th">完成率</th></tr></thead>
+              <thead><tr><th class="ck-th ck-idx">序号</th><th class="ck-th ck-item">打卡目标</th><th class="ck-th">完成</th><th class="ck-th">部分</th><th class="ck-th">未完成</th><th class="ck-th">完成率</th></tr></thead>
               <tbody>${itemRows}</tbody>
             </table></div>
           </div>
-          <div class="ck-hint">统计基于「每日打卡」中已勾选的记录自动计算，切换月份可查看不同月份数据。</div>`;
+          <div class="ck-hint">统计基于「每日打卡」中已勾选（含部分完成）的记录自动计算，切换月份可查看不同月份数据。</div>`;
       }
 
       function bindTab() {
@@ -329,14 +419,15 @@ export function initMonthlyCheckin() {
         });
         bindMonthNav();
 
-        // 各目标输入框：默认置灰，点「编辑」可改、点「保存」重新置灰
         bindEditable('#ckOverall', '#ckEditOverall', v => { const g = loadGoals(); g.overall = v; saveGoals(g); }, '总体目标');
         bindEditable('#ckAnnual', '#ckEditAnnual', v => { const g = loadGoals(); g.annual = v; saveGoals(g); }, '年度目标');
         bindEditable('#ckReading', '#ckEditReading', v => { const g = loadGoals(); g.reading = v; saveGoals(g); }, '阅读目标');
         bindEditable('#ckMGoal', '#ckEditMGoal', v => { const mm = loadMonthly(curYM); mm.goal = v; saveMonthly(curYM, mm); }, '月度目标');
         bindEditable('#ckMSum', '#ckEditMSum', v => { const mm = loadMonthly(curYM); mm.summary = v; saveMonthly(curYM, mm); }, '月度总结');
 
-        if (tab === 'table') bindTable();
+        if (tab === 'today') bindToday();
+        if (tab === 'monthedit') bindTable();
+        if (tab === 'today') bindNote();
       }
 
       function bindEditable(selTa, selBtn, onSave, label) {
@@ -367,27 +458,52 @@ export function initMonthlyCheckin() {
         const shift = (delta) => {
           const [y, m] = curYM.split('-').map(Number);
           const d = new Date(y, m - 1 + delta, 1);
-          curYM = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+          curYM = ymOf(d.getFullYear(), d.getMonth() + 1);
           renderTab();
         };
         if (prev) prev.onclick = () => shift(-1);
         if (next) next.onclick = () => shift(1);
       }
 
+      // 通用：表格格子三态切换（今日/昨日可编辑）
       function bindTable() {
-        body.querySelectorAll('.ck-cell').forEach(cell => {
+        body.querySelectorAll('.ck-cell:not([disabled])').forEach(cell => {
           cell.onclick = () => {
             const item = Number(cell.dataset.item);
-            const day = Number(cell.dataset.day);
-            const grid = loadGrid(curYM);
+            const dateStr = cell.dataset.date;
+            const [yy, mm, dd] = dateStr.split('-').map(Number);
+            if (!isEditableDay(yy, mm, dd)) { toast('该日期已锁定，仅今日与昨日可打卡'); return; }
+            const ym = ymOf(yy, mm);
+            const grid = loadGrid(ym);
             if (!grid[item]) grid[item] = {};
-            if (grid[item][day]) delete grid[item][day];
-            else grid[item][day] = 1;
-            Storage.set(gridKey(curYM), grid);
+            const cur = grid[item][dateStr] || null;
+            const idx = STATE_CYCLE.indexOf(cur);
+            const next = STATE_CYCLE[(idx + 1) % STATE_CYCLE.length];
+            if (next === null) delete grid[item][dateStr];
+            else grid[item][dateStr] = next;
+            Storage.set(gridKey(ym), grid);
             renderTab();
           };
         });
+      }
 
+      function bindNote() {
+        const saveBtn = body.querySelector('#ckSaveNote');
+        if (saveBtn) saveBtn.onclick = () => {
+          const ta = body.querySelector('#ckNote');
+          if (!ta) return;
+          const today = new Date();
+          const ym = ymOf(today.getFullYear(), today.getMonth() + 1);
+          const ds = ymdOf(today.getFullYear(), today.getMonth() + 1, today.getDate());
+          const notes = loadNotes(ym);
+          notes[ds] = ta.value;
+          Storage.set(noteKey(ym), notes);
+          toast('已保存今日记录');
+        };
+      }
+
+      function bindToday() {
+        bindTable();
         const mng = body.querySelector('#ckMngItems');
         if (mng) mng.onclick = () => { itemsEditMode = true; renderTab(); };
 
@@ -419,8 +535,12 @@ export function initMonthlyCheckin() {
             const it = items[idx];
             items.splice(idx, 1);
             saveItems(items);
-            const grid = loadGrid(curYM);
-            if (it && grid[it.n]) { delete grid[it.n]; Storage.set(gridKey(curYM), grid); }
+            if (it) {
+              // 清理所有月份的该项打卡记录
+              const allYm = new Set([ymOf(new Date().getFullYear(), new Date().getMonth() + 1)]);
+              allYm.add(curYM);
+              allYm.forEach(ym => { const grid = loadGrid(ym); if (grid[it.n]) { delete grid[it.n]; Storage.set(gridKey(ym), grid); } });
+            }
             renderTab();
           };
         });

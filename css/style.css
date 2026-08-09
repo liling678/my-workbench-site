@@ -1523,12 +1523,25 @@ input, textarea, select { font-family: inherit; }
 .ck-day { font-weight: 600; }
 .ck-w { font-size: 10px; color: var(--text-muted); }
 .ck-wkend { background: #E8F4EE !important; }
-.ck-cell { width: 22px; height: 22px; border: 1px solid var(--border); border-radius: 5px; background: #fff; cursor: pointer; padding: 0; display: inline-block; vertical-align: middle; }
-.ck-cell.on { background: var(--primary); border-color: var(--primary); }
-.ck-count { width: 48px; font-weight: 600; color: var(--primary); }
+.ck-cell { width: 26px; height: 26px; border: 1px solid var(--border); border-radius: 6px; background: #fff; cursor: pointer; padding: 0; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; line-height: 1; color: var(--text-muted); vertical-align: middle; }
+.ck-cell:hover:not([disabled]):not(.ck-locked) { border-color: var(--primary); }
+.ck-cell.ck-done { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 700; }
+.ck-cell.ck-partial { background: #FCE9C8; border-color: #E0A93B; color: #B5780F; font-weight: 700; }
+.ck-cell.ck-undone { background: #FBE3E1; border-color: #D9534F; color: #C0392B; font-weight: 700; }
+.ck-cell.ck-locked, .ck-cell[disabled] { background: var(--bg-input); border-style: dashed; color: var(--text-muted); opacity: 0.55; cursor: not-allowed; }
+.ck-count { width: 56px; font-weight: 600; color: var(--primary); font-size: 12px; }
+.ck-done-n { color: var(--primary); font-weight: 700; }
+.ck-part-n { color: #B5780F; font-weight: 600; }
 .ck-sumrow td { background: var(--bg-input); font-weight: 600; font-size: 12px; }
 .ck-sumday { color: var(--primary); }
 .ck-hint { font-size: 12px; color: var(--text-muted); margin-top: 10px; line-height: 1.6; }
+.ck-legend { display: flex; gap: 10px; font-size: 11px; }
+.ck-lg { display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; border-radius: 6px; }
+.ck-lg-done { background: var(--primary); color: #fff; }
+.ck-lg-part { background: #FCE9C8; color: #B5780F; }
+.ck-lg-undone { background: #FBE3E1; color: #C0392B; }
+.ck-note-text { width: 100%; min-height: 110px; resize: vertical; padding: 10px 12px; border: 0.5px solid var(--border); border-radius: 10px; background: var(--bg-input); color: var(--text-body); font-size: 14px; line-height: 1.7; font-family: inherit; box-sizing: border-box; }
+.ck-note-text:focus { outline: none; border-color: var(--primary); background: #fff; }
 
 /* 打卡项目管理（编辑态） */
 .ck-items-edit { display: flex; flex-direction: column; gap: 10px; }

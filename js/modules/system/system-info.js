@@ -3,7 +3,7 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v35';
+export const APP_VERSION = 'v36';
 export const APP_DATE = '2026-08-09';
 
 // 清理残留的旧版本缓存：只保留 wb-app-<version>，删除其它 wb-app-* 键，
@@ -19,6 +19,17 @@ async function cleanupStaleCaches(version) {
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v36', date: '2026-08-09',
+    items: [
+      '打卡状态升级为三态：完成 / 部分完成 / 未完成，点格子循环切换（空→完成→部分→未完成）',
+      '补卡规则：仅今日与昨日可打卡，更早的过往日自动置灰锁定，避免拖延补卡',
+      '每日打卡表改为「本周 7 天」视图，每周一自然切换到当周（标题显示本周日期范围）',
+      '新增「打卡总览」页：整月完整打卡表格（31 天 × 项目）实时更新，支持按月查看，补卡规则同样生效',
+      '每日打卡表下方新增「今日记录」文本框，按天存储今日完成情况 / 学习状态 / 未达成原因',
+      '统计页按三态重算：完成次数 / 部分次数 / 打卡覆盖率 / 日均完成项，每周与各项目分完成·部分·未完成',
+    ],
+  },
   {
     version: 'v35', date: '2026-08-09',
     items: [
