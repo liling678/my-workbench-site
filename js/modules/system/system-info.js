@@ -6,6 +6,17 @@ import { toast, escapeHtml } from '../../ui.js';
 export const APP_VERSION = 'v33';
 export const APP_DATE = '2026-08-09';
 
+// 清理残留的旧版本缓存：只保留 wb-app-<version>，删除其它 wb-app-* 键，
+// 避免多个版本缓存并存导致「本机缓存与代码版本不一致」的误报。
+async function cleanupStaleCaches(version) {
+  if (!('caches' in window)) return;
+  const expected = 'wb-app-' + version;
+  try {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter(k => k.startsWith('wb-app-') && k !== expected).map(k => caches.delete(k)));
+  } catch (e) { /* 忽略清理失败 */ }
+}
+
 // 更新日志（新的放最上面）
 const CHANGELOG = [
   {
@@ -260,19 +271,21 @@ export function initSystemInfo() {
 
       // —— 运行状态诊断：本机 SW 缓存版本 vs 代码版本 ——
       const statusEl = container.querySelector('#runStatus');
-      (async () => {
+      async function renderRunStatus() {
         const lines = [];
         try {
           if ('caches' in window) {
+            // 先清理残留的旧版本缓存（只保留期望版本），避免「多缓存并存」造成误报
+            await cleanupStaleCaches(APP_VERSION);
             const keys = await caches.keys();
             const wbKeys = keys.filter(k => k.startsWith('wb-app-'));
-            const running = wbKeys.length ? wbKeys.join(', ') : '(无)';
             const expected = 'wb-app-' + APP_VERSION;
-            const ok = wbKeys.includes(expected) && wbKeys.length === 1;
-            lines.push(`本机缓存版本：<b>${escapeHtml(running)}</b>`);
+            // 只要期望版本缓存存在即视为正常；长度>1 的残留已在上面清理，不会再触发误报
+            const ok = wbKeys.includes(expected);
+            lines.push(`本机缓存版本：<b>${escapeHtml(wbKeys.join(', ') || '(无)')}</b>`);
             lines.push(ok
-              ? '✅ 你正在运行最新版本'
-              : `⚠️ 本机缓存与代码版本(${expected})不一致，点上方「检查更新」或彻底关闭应用后重开`);
+              ? `✅ 你正在运行最新版本（${APP_VERSION}），缓存与代码一致`
+              : `⚠️ 本机缺少 ${expected} 缓存（当前仅 ${wbKeys.join(', ') || '无'}），点上方「检查更新」或彻底关闭应用后重开`);
           } else {
             lines.push('本机不支持缓存检测');
           }
@@ -289,7 +302,8 @@ export function initSystemInfo() {
           lines.push('状态读取失败：' + escapeHtml(e.message || String(e)));
         }
         statusEl.innerHTML = lines.join('<br>');
-      })();
+      }
+      renderRunStatus();
 
       // —— 手动检查更新 ——
       container.querySelector('#checkUpdateBtn').onclick = async () => {
@@ -309,11 +323,15 @@ export function initSystemInfo() {
           }
           // 强制向网络拉取最新 sw.js（来自 github.io），连不上会抛错
           await reg.update();
+          // 无论是否有新版本，都顺手清理旧缓存，消除「本机缓存与代码版本不一致」的误报
+          await cleanupStaleCaches(APP_VERSION);
           if (reg.waiting || reg.installing) {
             toast('发现新版本，即将刷新页面');
             setTimeout(() => location.reload(), 1200);
           } else {
-            toast('已是最新版本（' + APP_VERSION + '），无需更新');
+            // 重新渲染诊断，让误报立即消失
+            await renderRunStatus();
+            toast('已是最新版本（' + APP_VERSION + '），已清理旧缓存');
             btn.disabled = false; btn.textContent = '🔄 检查更新';
           }
         } catch (e) {
