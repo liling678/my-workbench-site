@@ -117,11 +117,12 @@ function renderCountdownBody() {
     const d = daysBetween(todayKey(), e.date);
     return `<div class="countdown-item">
       <div class="countdown-item-name">${escapeHtml(e.name)}</div>
-      <div class="countdown-item-meta"><span class="countdown-item-days">${d}</span><span class="countdown-item-unit">\u5929</span><span class="countdown-item-date">${e.date}</span></div>
+      <div class="countdown-item-days"><span class="c-num">${d}</span><span class="c-unit">\u5929</span></div>
+      <div class="countdown-item-date">${e.date}</div>
     </div>`;
   }).join('');
   const more = list.length > maxShow ? `<div class="countdown-more">还有 ${list.length - maxShow} 个目标，点右上角「管理」查看</div>` : '';
-  return `<div class="countdown-list">${items}${more}</div>`;
+  return `<div class="countdown-list cols-${shown.length}">${items}${more}</div>`;
 }
 
 function getGreeting() {

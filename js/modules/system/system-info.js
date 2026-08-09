@@ -3,11 +3,18 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v32';
+export const APP_VERSION = 'v33';
 export const APP_DATE = '2026-08-09';
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v33', date: '2026-08-09',
+    items: [
+      '目标倒计时样式重做：按目标数量自适应布局（1 个=横向大卡，2 个=并排方形，3 个=三列方形），更简洁美观',
+      '倒计时卡片改为居中方块、加描边、圆角更大，剩余天数与日期清晰分层',
+    ],
+  },
   {
     version: 'v32', date: '2026-08-09',
     items: [
