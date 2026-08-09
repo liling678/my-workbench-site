@@ -3,7 +3,7 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v43';
+export const APP_VERSION = 'v44';
 export const APP_DATE = '2026-08-09';
 
 // 清理残留的旧版本缓存：只保留 wb-app-<version>，删除其它 wb-app-* 键，
@@ -19,6 +19,9 @@ async function cleanupStaleCaches(version) {
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v44', date: '2026-08-09',
+    desc: '「为人民服务」考公模块按软考备考教练模式重构：新增备考看板（倒计时到最近考试节点+三阶段进度条+行测/申论目标+累计+教练提醒+知识点图谱+阅读计划+今日聚焦）、今日计划生成器、每日监督打卡、错题库/薄弱点、模考进度、复盘·通过率。' },
   {
     version: 'v43', date: '2026-08-09',
     desc: '系统信息页新增「🧹 清除缓存并强制刷新」按钮：一键注销旧 Service Worker + 清空前端缓存后强制重载，解决 PWA 图标卡在旧版本（手机浏览器正常、PWA 报错）的问题。本地数据(localStorage)不受影响。' },
