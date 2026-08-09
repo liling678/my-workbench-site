@@ -203,6 +203,109 @@ function buildTable(items, dates, countYM, opts) {
     </div>`;
 }
 
+// ====== 共用：在指定容器渲染「本周每日打卡表 + 今日记录」======
+// 首页与月度打卡表的「每日打卡」共用同一份渲染与交互（就地更新，不整表重渲）
+export function renderWeeklyCheckin(host) {
+  if (!host) return;
+  const items = loadItems();
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const dow = today.getDay();
+  const monOffset = (dow === 0) ? -6 : (1 - dow);
+  const mon = new Date(today); mon.setDate(today.getDate() + monOffset);
+  const dates = [];
+  for (let i = 0; i < 7; i++) {
+    const dt = new Date(mon); dt.setDate(mon.getDate() + i);
+    const y = dt.getFullYear(), m = dt.getMonth() + 1, d = dt.getDate();
+    const rel = dayRelation(y, m, d);
+    dates.push({ y, m, d, dateStr: ymdOf(y, m, d), wd: dt.getDay(), wkend: (dt.getDay() === 0 || dt.getDay() === 6), editable: isEditableDay(y, m, d), locked: (rel === 'past' || rel === 'future') });
+  }
+  const countYM = ymOf(today.getFullYear(), today.getMonth() + 1);
+  const sun = dates[6];
+  const weekTitle = `本周 ${mon.getMonth() + 1}.${mon.getDate()} - ${sun.m}.${sun.d}`;
+  const tY = today.getFullYear(), tM = today.getMonth() + 1, tD = today.getDate();
+  const tNote = (loadNotes(ymOf(tY, tM))[ymdOf(tY, tM, tD)]) || '';
+
+  host.innerHTML = `
+    <div class="ck-card">
+      <div class="ck-card-head"><div class="ck-card-title">✅ 每日打卡表 · ${weekTitle}</div>
+        <div class="ck-legend"><span class="ck-lg ck-lg-done">✓完成</span><span class="ck-lg ck-lg-part">◑部分</span><span class="ck-lg ck-lg-undone">✕未完成</span></div>
+      </div>
+      <div class="ck-hint">点格子循环切换：空→完成→部分→未完成。仅<b>今日与昨日</b>可打卡，更早日期已锁定（灰色）。每周一自动切换到当周。</div>
+      ${buildTable(items, dates, countYM, { showCount: false })}
+    </div>
+    <div class="ck-card">
+      <div class="ck-card-head"><div class="ck-card-title">📝 今日记录（${tM}月${tD}日）</div><button class="btn btn-primary btn-sm" id="ckSaveNote">💾 保存记录</button></div>
+      <div class="ck-card-desc">记录今天的完成情况、学习状态、未达成原因等</div>
+      <textarea class="ck-note-text" id="ckNote" placeholder="例如：今日备考 2h，软考碎片 30min；运动未完成（加班太累）；明日补上…">${escapeHtml(tNote)}</textarea>
+    </div>`;
+
+  // 绑定格子（就地更新）
+  host.querySelectorAll('.ck-cell:not([disabled])').forEach(cell => {
+    cell.onclick = () => {
+      const item = Number(cell.dataset.item);
+      const dateStr = cell.dataset.date;
+      const [yy, mm, dd] = dateStr.split('-').map(Number);
+      if (!isEditableDay(yy, mm, dd)) { toast('该日期已锁定，仅今日与昨日可打卡'); return; }
+      const ym = ymOf(yy, mm);
+      const grid = loadGrid(ym);
+      if (!grid[item]) grid[item] = {};
+      const cur = grid[item][dateStr] || null;
+      const idx = STATE_CYCLE.indexOf(cur);
+      const next = STATE_CYCLE[(idx + 1) % STATE_CYCLE.length];
+      if (next === null) delete grid[item][dateStr];
+      else grid[item][dateStr] = next;
+      Storage.set(gridKey(ym), grid);
+      cell.className = 'ck-cell' + (next ? ' ck-' + next : '');
+      cell.textContent = next ? STATE_ICON[next] : '';
+      const sumCell = host.querySelector('.ck-sumday[data-date="' + dateStr + '"]');
+      if (sumCell) {
+        let perDay = 0;
+        items.forEach(it => {
+          const g = (loadGrid(ym)[it.n]) || {};
+          const st = g[dateStr];
+          if (st === 'done' || st === 'partial') perDay++;
+        });
+        sumCell.textContent = perDay || '';
+      }
+      const rowCount = cell.closest('tr').querySelector('.ck-count');
+      if (rowCount) {
+        const c = countItemInMonth(item, ym);
+        rowCount.innerHTML = `<span class="ck-done-n">${c.done}</span>${c.partial ? `<span class="ck-part-n"> ◑${c.partial}</span>` : ''}`;
+      }
+    };
+  });
+
+  // 绑定今日记录保存
+  const saveBtn = host.querySelector('#ckSaveNote');
+  if (saveBtn) saveBtn.onclick = () => {
+    const ta = host.querySelector('#ckNote');
+    if (!ta) return;
+    const ym = ymOf(tY, tM);
+    const ds = ymdOf(tY, tM, tD);
+    const notes = loadNotes(ym);
+    notes[ds] = ta.value;
+    Storage.set(noteKey(ym), notes);
+    toast('已保存今日记录');
+  };
+}
+
+// 今日打卡汇总（供首页统计卡片使用）
+export function getTodayCheckinSummary() {
+  const items = loadItems();
+  const today = new Date();
+  const ds = ymdOf(today.getFullYear(), today.getMonth() + 1, today.getDate());
+  const ym = ymOf(today.getFullYear(), today.getMonth() + 1);
+  const g = loadGrid(ym);
+  let done = 0, partial = 0, undone = 0;
+  items.forEach(it => {
+    const st = (g[it.n] || {})[ds];
+    if (st === 'done') done++;
+    else if (st === 'partial') partial++;
+    else if (st === 'undone') undone++;
+  });
+  return { done, partial, undone, total: items.length, checked: done + partial + undone };
+}
+
 export function initMonthlyCheckin() {
   registerStandalone('monthly-checkin', {
     title: '月度打卡表',
@@ -246,6 +349,8 @@ export function initMonthlyCheckin() {
         else if (tab === 'today') body.innerHTML = renderToday();
         else if (tab === 'monthedit') body.innerHTML = renderMonthEdit();
         else body.innerHTML = renderStats();
+        // 本周打卡表 + 今日记录（首页与月度打卡表共用同一渲染）
+        if (tab === 'today') renderWeeklyCheckin(body.querySelector('#ckWeekHost'));
         bindTab();
       }
 
@@ -341,18 +446,7 @@ export function initMonthlyCheckin() {
             <div class="ck-phases">${PHASES.map(p => `<div class="ck-phase"><b>${p.tag}</b> <span class="ck-phase-date">${p.date}</span><div>${escapeHtml(p.text)}</div></div>`).join('')}</div>
             <div class="ck-special">${SPECIAL.map(s => '· ' + escapeHtml(s)).join('<br>')}</div>
           </div>
-          <div class="ck-card">
-            <div class="ck-card-head"><div class="ck-card-title">✅ 每日打卡表 · ${weekTitle}</div>
-              <div class="ck-legend"><span class="ck-lg ck-lg-done">✓完成</span><span class="ck-lg ck-lg-part">◑部分</span><span class="ck-lg ck-lg-undone">✕未完成</span></div>
-            </div>
-            <div class="ck-hint">点格子循环切换：空→完成→部分→未完成。仅<b>今日与昨日</b>可打卡，更早日期已锁定（灰色）。每周一自动切换到当周。</div>
-            ${buildTable(items, dates, countYM, { showCount: false })}
-          </div>
-          <div class="ck-card">
-            <div class="ck-card-head"><div class="ck-card-title">📝 今日记录（${tM}月${tD}日）</div><button class="btn btn-primary btn-sm" id="ckSaveNote">💾 保存记录</button></div>
-            <div class="ck-card-desc">记录今天的完成情况、学习状态、未达成原因等</div>
-            <textarea class="ck-note-text" id="ckNote" placeholder="例如：今日备考 2h，软考碎片 30min；运动未完成（加班太累）；明日补上…">${escapeHtml(tNote)}</textarea>
-          </div>`;
+          <div id="ckWeekHost"></div>`;
       }
 
       // —— 打卡总览：整月完整表格，实时更新 ——
@@ -463,7 +557,6 @@ export function initMonthlyCheckin() {
 
         if (tab === 'today') bindToday();
         if (tab === 'monthedit') bindTable();
-        if (tab === 'today') bindNote();
       }
 
       function bindEditable(selTa, selBtn, onSave, label) {
@@ -556,7 +649,6 @@ export function initMonthlyCheckin() {
       }
 
       function bindToday() {
-        bindTable();
         const mng = body.querySelector('#ckMngItems');
         if (mng) mng.onclick = () => { itemsEditMode = true; renderTab(); };
 

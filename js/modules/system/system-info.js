@@ -3,7 +3,7 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v38';
+export const APP_VERSION = 'v39';
 export const APP_DATE = '2026-08-09';
 
 // 清理残留的旧版本缓存：只保留 wb-app-<version>，删除其它 wb-app-* 键，
@@ -19,6 +19,15 @@ async function cleanupStaleCaches(version) {
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v39', date: '2026-08-09',
+    items: [
+      '首页「每日打卡」改为复用月度打卡表的本周打卡表（14项 × 周一~周日三态打卡 + 今日记录），旧的 2×2 运动/读书/喝水/早睡 卡片移除，数据统一为一份',
+      '首页统计卡片「连续天数」替换为「今日打卡 X/14」，直接反映本周打卡表当天完成数',
+      '首页原「每日计划」标题改名为「一些待办」',
+      '底层重构：抽出共用 renderWeeklyCheckin / getTodayCheckinSummary，首页与月度打卡表共享同一份打卡渲染与存储',
+    ],
+  },
   {
     version: 'v38', date: '2026-08-09',
     items: [

@@ -3,6 +3,7 @@ import { Storage } from '../../storage.js';
 import { openModal, closeModal, toast, todayKey, dateKey, escapeHtml, confirmDialog } from '../../ui.js';
 import { Icons } from '../../registry.js';
 import { openSyncSettings, loadCloudConfig } from '../../cloud-sync.js';
+import { renderWeeklyCheckin, getTodayCheckinSummary } from '../checkin/monthly-checkin.js';
 
 // 好句库：每条带来源（书名 + 作者）
 const QUOTES = [
@@ -23,16 +24,8 @@ const QUOTES = [
   { text: '生活不可能像你想象得那么好，但也不会像你想象得那么糟。', source: '《人生》', author: '路遥', en: 'Life is never as good as you hope, nor as bad as you fear.' },
 ];
 
-const CHECKIN_ITEMS = [
-  { id: 'exercise', name: '运动', icon: '\uD83C\uDFC3', inputLabel: '运动时长', inputPlaceholder: '如 30min' },
-  { id: 'reading', name: '读书', icon: '\uD83D\uDCD6', inputLabel: '阅读量', inputPlaceholder: '如 20页' },
-  { id: 'water', name: '喝水', icon: '\uD83D\uDCA7', inputLabel: '喝水杯数', inputPlaceholder: '如 6杯' },
-  { id: 'sleep', name: '早睡', icon: '\uD83C\uDF19', inputLabel: '入睡时间', inputPlaceholder: '如 23:00' },
-];
-
 const TASK_KEY = 'daily_tasks';
 const WEIGHT_KEY = 'weight_records';
-const CHECKIN_KEY = 'checkin_records';
 const WEIGHT_TARGET_KEY = 'weight_target';
 const QUOTE_KEY = 'daily_quote';
 const COUNTDOWN_KEY = 'countdown_events';
@@ -164,28 +157,6 @@ function saveWeight(weight) {
   Storage.set(WEIGHT_KEY, records);
 }
 
-function getCheckins(dk) {
-  const all = Storage.get(CHECKIN_KEY, {});
-  return all[dk || todayKey()] || {};
-}
-
-function saveCheckin(itemId, detail, dk) {
-  const all = Storage.get(CHECKIN_KEY, {});
-  const key = dk || todayKey();
-  if (!all[key]) all[key] = {};
-  all[key][itemId] = { detail, time: Date.now() };
-  Storage.set(CHECKIN_KEY, all);
-}
-
-function removeCheckin(itemId, dk) {
-  const all = Storage.get(CHECKIN_KEY, {});
-  const key = dk || todayKey();
-  if (all[key]) {
-    delete all[key][itemId];
-    Storage.set(CHECKIN_KEY, all);
-  }
-}
-
 function getLast7DaysWeights() {
   const records = getWeights();
   const days = [];
@@ -202,24 +173,6 @@ function getLast7DaysWeights() {
     });
   }
   return days;
-}
-
-function getCheckinStreak() {
-  const all = Storage.get(CHECKIN_KEY, {});
-  let streak = 0;
-  for (let i = 0; i < 30; i++) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const dk = dateKey(d);
-    const dayCheckins = all[dk] || {};
-    const allDone = CHECKIN_ITEMS.every(item => dayCheckins[item.id]);
-    if (allDone) {
-      streak++;
-    } else if (i > 0) {
-      break;
-    }
-  }
-  return streak;
 }
 
 function getTaskStats(dk) {
@@ -386,8 +339,7 @@ export function initDashboard(container) {
   const allWeights = getWeights();
   const viewWeightRec = allWeights.find(r => r.date === viewKey);
   const todayWeight = viewWeightRec ? viewWeightRec.weight : null;
-  const checkins = getCheckins(viewKey);
-  const streak = getCheckinStreak();
+  const todayCheckin = getTodayCheckinSummary();
   const tasks = getTasks(viewKey);
   const autoTasks = getAutoTasks(viewKey);
 
@@ -443,8 +395,8 @@ export function initDashboard(container) {
         <div class="stat-label">\u5B8C\u6210\u7387</div>
       </div>
       <div class="stat-item">
-        <div class="stat-num">${streak}</div>
-        <div class="stat-label">\u8FDE\u7EED\u5929\u6570</div>
+        <div class="stat-num">${todayCheckin.checked}/${todayCheckin.total}</div>
+        <div class="stat-label">\u4ECA\u65E5\u6253\u5361</div>
       </div>
     </div>
 
@@ -466,43 +418,10 @@ export function initDashboard(container) {
       </div>
     </div>
 
-    <div class="checkin-card">
-      <div class="checkin-head">
-        <div class="checkin-head-left">
-          <span class="checkin-head-icon">\u2705</span>
-          <span class="checkin-head-title">\u6BCF\u65E5\u6253\u5361</span>
-        </div>
-        <span class="checkin-head-count">${CHECKIN_ITEMS.filter(i => checkins[i.id]).length}/${CHECKIN_ITEMS.length}</span>
-      </div>
-      <div class="checkin-row">
-        ${CHECKIN_ITEMS.map(item => {
-          const ci = checkins[item.id];
-          const done = !!ci;
-          return `<div class="checkin-tile ${done ? 'done' : 'undone'}" data-checkin="${item.id}">
-            <div class="checkin-tile-icon">${done ? '\u2714' : item.icon}</div>
-            <div class="checkin-tile-name">${item.name}</div>
-            ${done ? `<div class="checkin-tile-detail">${escapeHtml(ci.detail)}</div>` : ''}
-            <div class="checkin-tile-status">${done ? '' : '\u70B9\u51FB\u6253\u5361'}</div>
-          </div>`;
-        }).join('')}
-      </div>
-      <div class="checkin-footer">
-        <div class="checkin-dots">
-          ${Array.from({length: 7}, (_, i) => {
-            const d = new Date(); d.setDate(d.getDate() - (6 - i));
-            const dk = dateKey(d);
-            const all = Storage.get(CHECKIN_KEY, {});
-            const dayCi = all[dk] || {};
-            const allDone = CHECKIN_ITEMS.every(item => dayCi[item.id]);
-            return `<div class="checkin-dot ${allDone ? '' : 'empty'}" title="${dk}"></div>`;
-          }).join('')}
-        </div>
-        <span class="checkin-streak">\u8FDE\u7EED ${streak} \u5929\u5168\u52E4</span>
-      </div>
-    </div>
+    <div id="homeCheckinHost"></div>
 
     <div class="task-section-head">
-      <span class="task-section-title">${isHistory ? (viewDate.getMonth() + 1) + '\u6708' + viewDate.getDate() + '\u65E5 \u8BA1\u5212' : '\u6BCF\u65E5\u8BA1\u5212'}</span>
+      <span class="task-section-title">${isHistory ? (viewDate.getMonth() + 1) + '\u6708' + viewDate.getDate() + '\u65E5 \u8BA1\u5212' : '\u4E00\u4E9B\u5F85\u529E'}</span>
       <div class="date-nav">
         <button class="date-nav-btn" id="datePrev" title="\u524D\u4E00\u5929">\u2039</button>
         <button class="date-nav-btn${isHistory ? '' : ' disabled'}" id="dateToday" ${isHistory ? '' : 'disabled'}>\u4ECA\u5929</button>
@@ -533,22 +452,8 @@ export function initDashboard(container) {
   // 倒计时管理
   container.querySelector('#cdManageBtn').onclick = () => openCountdownManage(container);
 
-  // 打卡
-  container.querySelectorAll('[data-checkin]').forEach(el => {
-    el.onclick = () => {
-      if (isHistory) { toast('\u5386\u53F2\u8BB0\u5F52\u4E0D\u53EF\u7F16\u8F91\uFF0C\u70B9\u300C\u4ECA\u5929\u300D\u56DE\u5230\u5F53\u65E5'); return; }
-      const itemId = el.dataset.checkin;
-      const item = CHECKIN_ITEMS.find(i => i.id === itemId);
-      const checkins = getCheckins(viewKey);
-      if (checkins[itemId]) {
-        removeCheckin(itemId, viewKey);
-        toast(`\u5DF2\u53D6\u6D88${item.name}\u6253\u5361`);
-        initDashboard(container);
-      } else {
-        openCheckinModal(item, container);
-      }
-    };
-  });
+  // 首页「每日打卡」复用月度打卡表的本周打卡表 + 今日记录
+  renderWeeklyCheckin(container.querySelector('#homeCheckinHost'));
 
   // 任务tab切换
   container.querySelectorAll('[data-tab]').forEach(el => {
@@ -711,26 +616,6 @@ function openCountdownManage(container) {
     });
   };
   bindList();
-}
-
-function openCheckinModal(item, container) {
-  openModal({
-    title: `${item.name}\u6253\u5361`,
-    body: `
-      <div class="field">
-        <label class="field-label">${item.inputLabel}</label>
-        <input class="input" id="checkinDetail" placeholder="${item.inputPlaceholder}" autofocus>
-      </div>`,
-    foot: `<button class="btn" id="checkinCancel">\u53D6\u6D88</button><button class="btn btn-primary" id="checkinSave">\u6253\u5361</button>`
-  });
-  document.getElementById('checkinCancel').onclick = closeModal;
-  document.getElementById('checkinSave').onclick = () => {
-    const detail = document.getElementById('checkinDetail').value.trim() || '\u5DF2\u5B8C\u6210';
-    saveCheckin(item.id, detail);
-    closeModal();
-    toast(`${item.name}\u6253\u5361\u6210\u529F`);
-    initDashboard(container);
-  };
 }
 
 function openAddTaskModal(container, category) {

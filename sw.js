@@ -1,5 +1,5 @@
 // sw.js — 工作台 PWA 离线缓存（单页应用外壳）
-const CACHE = 'wb-app-v38';
+const CACHE = 'wb-app-v39';
 
 // 预缓存核心外壳，保证首次安装后即可离线
 const SHELL = [
