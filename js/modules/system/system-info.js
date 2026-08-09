@@ -3,7 +3,7 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v34';
+export const APP_VERSION = 'v35';
 export const APP_DATE = '2026-08-09';
 
 // 清理残留的旧版本缓存：只保留 wb-app-<version>，删除其它 wb-app-* 键，
@@ -19,6 +19,15 @@ async function cleanupStaleCaches(version) {
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v35', date: '2026-08-09',
+    items: [
+      '月度打卡表改造：总览目标（总体+年度合并一页）、月度目标（含月度总结，按月存储）、阅读目标、每日打卡、统计 五个分区',
+      '所有目标输入框默认置灰（disabled），点「✏️ 编辑」可改、点「💾 保存」后重新置灰并持久化',
+      '打卡项默认规则调整：泡脚每周≥3次、早睡23:00前、穿搭/化妆每周≥2次不限周末；每日打卡项目支持管理（增删改）',
+      '每日打卡表移除「月度总结」列（移至月度目标页）；新增「统计」页自动汇总当月总打卡 / 日均 / 覆盖率 / 每周 / 各项目月度完成',
+    ],
+  },
   {
     version: 'v34', date: '2026-08-09',
     items: [

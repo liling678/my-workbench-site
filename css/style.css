@@ -1497,7 +1497,12 @@ input, textarea, select { font-family: inherit; }
 .ck-card { background: var(--bg-card); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 14px; }
 .ck-card-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
 .ck-card-desc { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
-.ck-goal-text { width: 100%; min-height: 150px; resize: vertical; padding: 10px 12px; border: 0.5px solid var(--border); border-radius: 10px; background: var(--bg-input); color: var(--text-body); font-size: 14px; line-height: 1.7; font-family: inherit; box-sizing: border-box; }
+.ck-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.ck-edit-btn { padding: 4px 12px; font-size: 12px; border: 1px solid var(--primary); color: var(--primary); background: transparent; border-radius: 8px; cursor: pointer; }
+.ck-edit-btn:hover { background: var(--primary-bg); }
+.ck-goal-text { width: 100%; min-height: 150px; resize: vertical; padding: 10px 12px; border: 0.5px solid var(--border); border-radius: 10px; background: var(--bg-input); color: var(--text-muted); font-size: 14px; line-height: 1.7; font-family: inherit; box-sizing: border-box; }
+.ck-goal-text:disabled { opacity: 0.9; cursor: default; }
+.ck-goal-text.editing { background: #fff; color: var(--text-body); border-color: var(--primary); outline: none; }
 .ck-rules { display: flex; flex-direction: column; gap: 8px; }
 .ck-rule { font-size: 13px; line-height: 1.5; }
 .ck-rule b { color: var(--text-title); }
@@ -1521,9 +1526,21 @@ input, textarea, select { font-family: inherit; }
 .ck-cell { width: 22px; height: 22px; border: 1px solid var(--border); border-radius: 5px; background: #fff; cursor: pointer; padding: 0; display: inline-block; vertical-align: middle; }
 .ck-cell.on { background: var(--primary); border-color: var(--primary); }
 .ck-count { width: 48px; font-weight: 600; color: var(--primary); }
-.ck-sum { min-width: 120px; }
-.ck-sum-input { width: 100%; border: none; background: transparent; font-size: 12px; color: var(--text-body); padding: 2px 4px; box-sizing: border-box; font-family: inherit; }
-.ck-sum-input:focus { outline: 1px solid rgba(15,110,86,0.4); background: #fff; }
 .ck-sumrow td { background: var(--bg-input); font-weight: 600; font-size: 12px; }
 .ck-sumday { color: var(--primary); }
 .ck-hint { font-size: 12px; color: var(--text-muted); margin-top: 10px; line-height: 1.6; }
+
+/* 打卡项目管理（编辑态） */
+.ck-items-edit { display: flex; flex-direction: column; gap: 10px; }
+.ck-item-edit { border: 0.5px solid var(--border); border-radius: 10px; padding: 10px; background: var(--bg-input); }
+.ck-item-edit-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; font-size: 12px; color: var(--text-muted); }
+.ck-del-item { padding: 2px 10px; font-size: 12px; color: var(--red); border: 1px solid var(--red); background: transparent; border-radius: 7px; cursor: pointer; }
+.ck-item-name, .ck-item-rule { width: 100%; box-sizing: border-box; padding: 7px 10px; border: 0.5px solid var(--border); border-radius: 8px; font-size: 13px; font-family: inherit; background: #fff; margin-bottom: 6px; }
+.ck-item-rule { margin-bottom: 0; color: var(--text-muted); }
+
+/* 统计卡片 */
+.ck-stats-cards { display: flex; gap: 10px; margin-bottom: 14px; }
+.ck-stat { flex: 1; background: var(--bg-card); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 14px 10px; text-align: center; }
+.ck-stat-num { font-size: 24px; font-weight: 700; color: var(--primary); line-height: 1.1; }
+.ck-stat-label { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+.ck-stat-table { min-width: 420px; }
