@@ -388,14 +388,20 @@ input, textarea, select { font-family: inherit; }
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   text-align: center; gap: 4px; min-height: 96px;
 }
-.countdown-list.cols-2 .countdown-item,
-.countdown-list.cols-3 .countdown-item { aspect-ratio: 1 / 1; }
+.countdown-list.cols-2 .countdown-item { aspect-ratio: 1 / 1; }
+/* 三个目标：三列排布，不强制正方形、允许名字换行，避免窄格下显示不全 */
+.countdown-list.cols-3 .countdown-item { aspect-ratio: auto; min-height: 92px; }
 .countdown-item-name {
   font-size: 13px; opacity: 0.95; max-width: 100%;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.countdown-list.cols-3 .countdown-item-name {
+  white-space: normal; display: -webkit-box; -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical; line-height: 1.25;
+}
 .countdown-item-days { display: flex; align-items: baseline; gap: 2px; }
 .countdown-item-days .c-num { font-size: 30px; font-weight: 700; line-height: 1; }
+.countdown-list.cols-3 .countdown-item-days .c-num { font-size: 26px; }
 .countdown-item-days .c-unit { font-size: 13px; opacity: 0.9; }
 .countdown-item-date { font-size: 11px; opacity: 0.8; }
 .countdown-more { font-size: 11px; opacity: 0.85; text-align: center; padding-top: 2px; }
