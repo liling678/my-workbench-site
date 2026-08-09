@@ -3,7 +3,7 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v36';
+export const APP_VERSION = 'v37';
 export const APP_DATE = '2026-08-09';
 
 // 清理残留的旧版本缓存：只保留 wb-app-<version>，删除其它 wb-app-* 键，
@@ -19,6 +19,12 @@ async function cleanupStaleCaches(version) {
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v37', date: '2026-08-09',
+    items: [
+      '总览目标页拆分：总体目标输入框缩小为「一句话总览」，备考主线与关键考试节点统一移入「年度目标」',
+    ],
+  },
   {
     version: 'v36', date: '2026-08-09',
     items: [

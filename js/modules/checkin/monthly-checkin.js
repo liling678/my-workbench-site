@@ -42,12 +42,29 @@ const STATE_CYCLE = [null, 'done', 'partial', 'undone'];
 const STATE_ICON = { done: '✓', partial: '◑', undone: '✕' };
 
 const GOAL_KEY = 'checkin_goals';
-function loadGoals() {
-  return Storage.get(GOAL_KEY, {
-    overall: '2026下半年每日打卡表\n主线：宜宾事业编 + 国考 + 四川省考备考｜辅助：减脂塑形 + 副业试水\n关键考试节点：10.24 软考、11 月下旬事业编、11.29 国考、12.06 省考',
-    annual: '上岸：事业编 / 国考 / 省考至少其一录用；\n体态：体脂率降至健康区间，养成运动习惯；\n副业：自媒体跑通最小盈利闭环。',
+function defaultGoals() {
+  return {
+    overall: '2026下半年每日打卡表',
+    annual: '【备考主线】宜宾事业编 + 国考 + 四川省考备考｜辅助：减脂塑形 + 副业试水\n【关键考试节点】10.24 软考、11 月下旬事业编、11.29 国考、12.06 省考\n\n【年度成果预期】\n上岸：事业编 / 国考 / 省考至少其一录用；\n体态：体脂率降至健康区间，养成运动习惯；\n副业：自媒体跑通最小盈利闭环。',
     reading: '每月精读 2 本成长 / 专业类书籍，输出读书笔记；碎片时间用听书补足。',
-  });
+  };
+}
+function loadGoals() {
+  const g = Storage.get(GOAL_KEY, defaultGoals());
+  // 迁移：旧版把「主线/关键节点」放在了 overall，统一挪到 annual
+  if (g.overall && g.overall.includes('主线：') && g.overall.includes('关键考试节点：')) {
+    const lines = g.overall.split('\n');
+    const rest = [], moved = [];
+    lines.forEach(l => {
+      if (l.startsWith('主线：') || l.startsWith('关键考试节点：')) moved.push(l);
+      else rest.push(l);
+    });
+    g.overall = (rest.join('\n').trim()) || defaultGoals().overall;
+    const block = '【备考主线与关键节点】\n' + moved.join('\n') + '\n\n';
+    if (!g.annual || g.annual.indexOf('备考主线') === -1) g.annual = block + (g.annual || '');
+    saveGoals(g);
+  }
+  return g;
 }
 function saveGoals(g) { Storage.set(GOAL_KEY, g); }
 
@@ -224,12 +241,12 @@ export function initMonthlyCheckin() {
         return `
           <div class="ck-card">
             <div class="ck-card-head"><div class="ck-card-title">总体目标</div><button class="ck-edit-btn" id="ckEditOverall">✏️ 编辑</button></div>
-            <div class="ck-card-desc">备考主线与关键节点（长期目标总览）</div>
-            <textarea class="ck-goal-text" id="ckOverall" disabled>${escapeHtml(g.overall)}</textarea>
+            <div class="ck-card-desc">一句话总览（备考主线与关键节点见下方「年度目标」）</div>
+            <textarea class="ck-goal-text ck-goal-text-sm" id="ckOverall" disabled>${escapeHtml(g.overall)}</textarea>
           </div>
           <div class="ck-card">
             <div class="ck-card-head"><div class="ck-card-title">年度目标</div><button class="ck-edit-btn" id="ckEditAnnual">✏️ 编辑</button></div>
-            <div class="ck-card-desc">本年度核心成果预期</div>
+            <div class="ck-card-desc">备考主线 · 关键节点 · 本年度核心成果预期</div>
             <textarea class="ck-goal-text" id="ckAnnual" disabled>${escapeHtml(g.annual)}</textarea>
           </div>`;
       }
