@@ -1632,3 +1632,27 @@ input, textarea, select { font-family: inherit; }
 .rk-pass-band.pass-low { background: #fbe6d8; color: #c8702a; }
 .rk-pass-band.pass-bad { background: #fbe3e1; color: #c0392b; }
 .badge-gray { background: #eceff1; color: #607d8b; }
+
+/* 软考：知识点图谱 / 阅读计划 / 今日聚焦 */
+.rk-kmap-summary { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; font-size: 13px; color: var(--text-muted); }
+.rk-kmap-summary b { color: var(--primary, #0F6E56); font-size: 16px; margin: 0 2px; }
+.rk-kmap-module { font-weight: 600; font-size: 13.5px; margin: 14px 0 6px; color: var(--text-body); border-left: 3px solid var(--primary, #0F6E56); padding-left: 8px; }
+.rk-kmap-module:first-of-type { margin-top: 4px; }
+.rk-kpoint { display: flex; align-items: center; gap: 8px; padding: 7px 4px; font-size: 13.5px; border-bottom: 0.5px dashed var(--border); cursor: pointer; }
+.rk-kpoint:last-child { border-bottom: 0; }
+.rk-kpoint input { flex: none; width: 16px; height: 16px; accent-color: var(--primary, #0F6E56); }
+.rk-kpoint.done .rk-kname { color: var(--text-muted); text-decoration: line-through; }
+.rk-kname { flex: 1; min-width: 0; }
+.rk-star { color: #E6A23C; letter-spacing: 1px; font-size: 12px; white-space: nowrap; }
+.rk-kmap-more { font-size: 12px; color: var(--text-muted); padding: 8px 4px; }
+.rk-phase-tag { font-size: 11px; padding: 2px 8px; border-radius: 10px; white-space: nowrap; font-weight: 600; }
+.rk-pt-base { background: #e7f1ec; color: #0F6E56; }
+.rk-pt-strong { background: #fdf0e0; color: #b5780e; }
+.rk-pt-sprint { background: #fbe3e1; color: #c0392b; }
+.rk-book-list { display: flex; flex-direction: column; gap: 10px; }
+.rk-book { display: flex; align-items: flex-start; gap: 8px; background: var(--bg-input); border: 0.5px solid var(--border); border-radius: 10px; padding: 10px 12px; cursor: pointer; }
+.rk-book input { margin-top: 3px; flex: none; width: 16px; height: 16px; accent-color: var(--primary, #0F6E56); }
+.rk-book.done .rk-book-name { color: var(--text-muted); text-decoration: line-through; }
+.rk-book-main { flex: 1; min-width: 0; }
+.rk-book-name { font-weight: 600; font-size: 13.5px; }
+.rk-book-note { font-size: 12px; color: var(--text-muted); margin-top: 2px; line-height: 1.5; }

@@ -9,6 +9,8 @@ const WRONG_KEY = 'ruankao_wrong';           // [ {id, subject, question, point,
 const ESSAY_KEY = 'ruankao_essays';          // [ {id, topic, status, words, date} ]
 const REVIEW_KEY = 'ruankao_reviews';        // { 'YYYY-MM-DD'(weekStart): { mastery, weak, nextPlan, stats, createdAt } }
 const CHAPTERS_KEY = 'ruankao_chapters';     // 完成章节（自由文本）
+const POINTS_DONE_KEY = 'ruankao_points_done'; // { '知识点名': true } 已掌握
+const BOOKS_DONE_KEY = 'ruankao_books_done';   // { '书名': true } 已读完
 
 const EXAM_DEFAULT = '2026-10-24';
 const TARGETS_DEFAULT = { comp: 55, caseS: 50, essay: 50 };
@@ -32,6 +34,66 @@ const PHASES = [
 const ESSAY_TOPICS = ['IT服务管理', '项目管理', '风险管理', '质量管理', '运维管理'];
 const WEEK_DAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
+// 知识点图谱（按模块归类，标注重要星级 ★ 与建议学习阶段）
+// phase: base=基础建立期 / strong=强化训练期 / sprint=冲刺阶段
+const KNOWLEDGE = [
+  { module: '一、信息系统与信息技术基础', points: [
+    { name: '信息系统概念与生命周期', star: 4, phase: 'base' },
+    { name: '信息系统开发方法与建模', star: 3, phase: 'base' },
+    { name: '新一代信息技术（云/大数据/物联网/AI）', star: 4, phase: 'base' },
+    { name: '网络、数据库与中间件基础', star: 3, phase: 'base' },
+  ] },
+  { module: '二、IT服务管理与ITSS（核心）', points: [
+    { name: 'IT服务与ITSS标准体系', star: 5, phase: 'base' },
+    { name: 'IT服务生命周期：战略', star: 5, phase: 'base' },
+    { name: 'IT服务生命周期：设计', star: 5, phase: 'base' },
+    { name: 'IT服务生命周期：转换', star: 5, phase: 'base' },
+    { name: 'IT服务生命周期：运营', star: 5, phase: 'base' },
+    { name: 'IT服务生命周期：持续改进', star: 5, phase: 'base' },
+    { name: 'IT服务质量评价与营销', star: 4, phase: 'strong' },
+    { name: 'IT服务团队、人员与沟通', star: 4, phase: 'strong' },
+    { name: 'IT服务安全与风险管理', star: 5, phase: 'strong' },
+  ] },
+  { module: '三、项目管理知识体系', points: [
+    { name: '项目整体管理', star: 5, phase: 'base' },
+    { name: '范围 / 进度 / 成本管理', star: 5, phase: 'base' },
+    { name: '质量管理', star: 4, phase: 'base' },
+    { name: '风险管理（重点）', star: 5, phase: 'strong' },
+    { name: '沟通与干系人管理', star: 4, phase: 'strong' },
+    { name: '采购与合同管理', star: 3, phase: 'base' },
+  ] },
+  { module: '四、系统规划', points: [
+    { name: 'IT战略规划', star: 4, phase: 'base' },
+    { name: '信息系统规划与信息资源规划', star: 4, phase: 'base' },
+    { name: '企业架构（TOGAF等）', star: 3, phase: 'base' },
+  ] },
+  { module: '五、系统运维与安全管理', points: [
+    { name: 'IT运维管理体系', star: 4, phase: 'base' },
+    { name: '运维工具与自动化', star: 3, phase: 'base' },
+    { name: '信息安全与业务连续性 / 灾备', star: 4, phase: 'strong' },
+  ] },
+  { module: '六、数学 · 经济 · 法规 · 英语', points: [
+    { name: '运筹与概率基础', star: 3, phase: 'base' },
+    { name: '财务与经济分析', star: 2, phase: 'base' },
+    { name: '招投标 / 合同 / 知识产权法规', star: 4, phase: 'strong' },
+    { name: '标准规范（ITSS / ISO / IEC等）', star: 4, phase: 'base' },
+    { name: '专业英语', star: 2, phase: 'strong' },
+  ] },
+];
+
+// 阅读书单（按阶段规划）
+const BOOKS = [
+  { name: '《系统规划与管理师教程》（官方教材）', phase: 'base', note: '通读建立体系，配思维导图' },
+  { name: 'ITSS 系列国家标准（GB/T 28827 等）', phase: 'base', note: '精读服务生命周期相关国标' },
+  { name: '《信息系统项目管理师教程》项目部分', phase: 'base', note: '补足十大领域理论' },
+  { name: '历年真题解析（2019–2025）', phase: 'strong', note: '每天 20–30 题，错题归档' },
+  { name: '案例分析专项训练', phase: 'strong', note: '每周 ≥2 题，套用答题模板' },
+  { name: '论文范文与模板集（5 方向）', phase: 'strong', note: '各背 1 篇，提炼通用框架' },
+  { name: '高频考点速记手册', phase: 'sprint', note: '考前 7 天只背不学新' },
+];
+
+const PHASE_TAG = { base: '基础期', strong: '强化期', sprint: '冲刺期' };
+
 // ===================== 数据读写 =====================
 function loadMeta() {
   return Storage.get(META_KEY, { startDate: todayStr(), examDate: EXAM_DEFAULT, targets: { ...TARGETS_DEFAULT } });
@@ -54,6 +116,19 @@ function loadReviews() { return Storage.get(REVIEW_KEY, {}); }
 function saveReviews(d) { Storage.set(REVIEW_KEY, d); }
 function loadChapters() { return Storage.get(CHAPTERS_KEY, ''); }
 function saveChapters(s) { Storage.set(CHAPTERS_KEY, s); }
+function loadPointsDone() { return Storage.get(POINTS_DONE_KEY, {}); }
+function savePointsDone(d) { Storage.set(POINTS_DONE_KEY, d); }
+function loadBooksDone() { return Storage.get(BOOKS_DONE_KEY, {}); }
+function saveBooksDone(d) { Storage.set(BOOKS_DONE_KEY, d); }
+function starStr(n) {
+  n = Math.max(0, Math.min(5, Number(n) || 0));
+  return '★★★★★'.slice(0, n) + '☆☆☆☆☆'.slice(0, 5 - n);
+}
+function allPoints() {
+  const arr = [];
+  KNOWLEDGE.forEach(m => m.points.forEach(p => arr.push(p)));
+  return arr;
+}
 
 // ===================== 工具 =====================
 function todayStr() {
@@ -182,6 +257,18 @@ function renderBoard(body) {
   const todayCk = ck[today];
   if (ph && ph.key !== 'exam' && !todayCk) coach += ' 今天还没打卡，记得学完来「每日监督」记一笔。';
 
+  // 知识点完成态 / 阶段统计 / 今日聚焦
+  const done = loadPointsDone();
+  const bdone = loadBooksDone();
+  const allP = allPoints();
+  const phaseCount = { base: 0, strong: 0, sprint: 0 };
+  allP.forEach(p => { if (phaseCount[p.phase] !== undefined) phaseCount[p.phase]++; });
+  const doneCount = allP.filter(p => done[p.name]).length;
+  const focusKey = ph ? (ph.key === 'exam' ? 'sprint' : ph.key) : 'base';
+  let todayPoints = allP.filter(p => p.phase === focusKey && !done[p.name]);
+  const hiddenCount = Math.max(0, todayPoints.length - 8);
+  todayPoints = todayPoints.slice(0, 8);
+
   const phaseSteps = PHASES.map(p => {
     const state = ph && (p.key === ph.key) ? 'on' : (today > p.end ? 'done' : '');
     return `<div class="rk-phase ${state}">
@@ -209,6 +296,54 @@ function renderBoard(body) {
       <div class="rk-card-head">📍 当前阶段</div>
       <div class="rk-phases">${phaseSteps}</div>
       <div class="rk-phase-focus">${ph ? escapeHtml(ph.focus) : '备考尚未开始。'}</div>
+    </div>
+
+    <div class="rk-card">
+      <div class="rk-card-head">📚 总体计划 · 知识点图谱（按阶段规划）</div>
+      <div class="rk-kmap-summary">
+        <span>基础期 <b>${phaseCount.base}</b></span>
+        <span>强化期 <b>${phaseCount.strong}</b></span>
+        <span>冲刺期 <b>${phaseCount.sprint}</b></span>
+        <span>已掌握 <b>${doneCount}/${allP.length}</b></span>
+      </div>
+      ${KNOWLEDGE.map(mod => `
+        <div class="rk-kmap-module">${escapeHtml(mod.module)}</div>
+        ${mod.points.map(p => `
+          <label class="rk-kpoint ${done[p.name] ? 'done' : ''}">
+            <input type="checkbox" class="rk-kcb" data-k="${escapeAttr(p.name)}" ${done[p.name] ? 'checked' : ''}>
+            <span class="rk-kname">${escapeHtml(p.name)}</span>
+            <span class="rk-star" title="重要度">${starStr(p.star)}</span>
+            <span class="rk-phase-tag rk-pt-${p.phase}">${PHASE_TAG[p.phase]}</span>
+          </label>`).join('')}
+      `).join('')}
+    </div>
+
+    <div class="rk-card">
+      <div class="rk-card-head">📖 阅读计划（按阶段）</div>
+      <div class="rk-card-desc">结合知识点图谱，按阶段安排教材 / 真题 / 论文资料。</div>
+      <div class="rk-book-list">
+        ${BOOKS.map(b => `
+          <label class="rk-book ${bdone[b.name] ? 'done' : ''}">
+            <input type="checkbox" class="rk-bcb" data-b="${escapeAttr(b.name)}" ${bdone[b.name] ? 'checked' : ''}>
+            <div class="rk-book-main">
+              <div class="rk-book-name">${escapeHtml(b.name)}</div>
+              <div class="rk-book-note">${escapeHtml(b.note)}</div>
+            </div>
+            <span class="rk-phase-tag rk-pt-${b.phase}">${PHASE_TAG[b.phase]}</span>
+          </label>`).join('')}
+      </div>
+    </div>
+
+    <div class="rk-card">
+      <div class="rk-card-head">🎯 每日计划 · 今日知识点聚焦</div>
+      <div class="rk-card-desc">基于当前阶段，从「总体计划」自动挑选尚未掌握的知识点作为今天主攻；点 ✅ 即标记已攻克。</div>
+      ${todayPoints.length ? todayPoints.map(p => `
+        <label class="rk-kpoint ${done[p.name] ? 'done' : ''}">
+          <input type="checkbox" class="rk-kcb" data-k="${escapeAttr(p.name)}" ${done[p.name] ? 'checked' : ''}>
+          <span class="rk-kname">${escapeHtml(p.name)}</span>
+          <span class="rk-star">${starStr(p.star)}</span>
+        </label>`).join('') + (hiddenCount ? `<div class="rk-kmap-more">…还有 ${hiddenCount} 个未掌握知识点，见上方「总体计划」</div>` : '') : `<div class="rk-empty">当前阶段的知识点已全部标记完成 🎉，去刷真题 / 写论文巩固吧。</div>`}
+      <button class="btn btn-primary" id="rkBoardPlan" style="margin-top:10px">⚡ 生成今日完整计划</button>
     </div>
 
     <div class="rk-card">
@@ -242,6 +377,30 @@ function renderBoard(body) {
 
   body.querySelector('#rk_start').onchange = (e) => { const m = loadMeta(); m.startDate = e.target.value; saveMeta(m); renderBoard(body); };
   body.querySelector('#rk_exam').onchange = (e) => { const m = loadMeta(); m.examDate = e.target.value; saveMeta(m); renderBoard(body); };
+
+  body.querySelectorAll('.rk-kcb').forEach(cb => {
+    cb.onchange = () => {
+      const d = loadPointsDone();
+      if (cb.checked) d[cb.dataset.k] = true; else delete d[cb.dataset.k];
+      savePointsDone(d);
+      renderBoard(body);
+    };
+  });
+  body.querySelectorAll('.rk-bcb').forEach(cb => {
+    cb.onchange = () => {
+      const d = loadBooksDone();
+      if (cb.checked) d[cb.dataset.b] = true; else delete d[cb.dataset.b];
+      saveBooksDone(d);
+      renderBoard(body);
+    };
+  });
+  const boardPlanBtn = body.querySelector('#rkBoardPlan');
+  if (boardPlanBtn) boardPlanBtn.onclick = () => {
+    rkTab = 'plan';
+    const ctn = body.parentElement;
+    ctn.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === rkTab));
+    renderBody(ctn);
+  };
 }
 
 // ===================== 今日计划生成 =====================

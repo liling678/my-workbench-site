@@ -3,7 +3,7 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v40';
+export const APP_VERSION = 'v41';
 export const APP_DATE = '2026-08-09';
 
 // 清理残留的旧版本缓存：只保留 wb-app-<version>，删除其它 wb-app-* 键，
@@ -19,6 +19,9 @@ async function cleanupStaleCaches(version) {
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v41', date: '2026-08-09',
+    desc: '软考学习·备考看板新增「总体计划(知识点图谱)」「阅读计划」「每日计划(今日知识点聚焦)」，按知识点+阶段规划，支持勾选掌握/已读。' },
   {
     version: 'v40', date: '2026-08-09',
     items: [
