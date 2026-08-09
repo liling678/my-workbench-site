@@ -3,7 +3,7 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v37';
+export const APP_VERSION = 'v38';
 export const APP_DATE = '2026-08-09';
 
 // 清理残留的旧版本缓存：只保留 wb-app-<version>，删除其它 wb-app-* 键，
@@ -19,6 +19,17 @@ async function cleanupStaleCaches(version) {
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v38', date: '2026-08-09',
+    items: [
+      '月度打卡表体验优化：年度目标文本框加大（ck-goal-text-lg）完整显示备考主线+关键节点+成果预期',
+      '月度目标默认自动规划（按月份给出阶段化目标，8-12月各有专属规划），未手动保存时回填默认；按月存储天然保留每月历史，可用‹上月/下月›回看',
+      '每日打卡格子改为「就地更新」：点格子不再整表重渲，解决点周日格后视图跳回顶部、每点一次都要重新滑动的问题',
+      '每日打卡表格去掉多余的整表拉伸留白（width:auto），打卡目标列与日期列之间不再有大段空格',
+      '每日打卡视图去掉「当月完成」列；顶部图例（完成/部分/未完成）改为换行显示在标题下方，表头一行完整展示',
+      '统计页默认展示当月（切换 tab 自动定位当前月，仍可用月份导航查看历史）',
+    ],
+  },
   {
     version: 'v37', date: '2026-08-09',
     items: [

@@ -76,8 +76,20 @@ function loadItems() {
 function saveItems(arr) { Storage.set(ITEMS_KEY, arr); }
 
 const MONTHLY_KEY = 'checkin_monthly';
+// 按月份自动规划月度目标（未手动保存过时作为默认值回填）；按月 key 存储天然保留每月历史
+function defaultMonthly(ym) {
+  const plans = {
+    '2026-08': '【8月 · 启动奠基期】\n· 建立全项打卡习惯，固定工作日学习节奏，周末补弱；\n· 软考：上班碎片化过一遍基础，晚间不占用备考主时间；\n· 公考：完成基础课第一轮，建立错题本框架；\n· 减脂：启动饮食控糖 + 每周≥3次运动，记录初始体重；\n· 副业：闲鱼/自媒体维持最低运营，不超时。',
+    '2026-09': '【9月 · 强化提升期】\n· 公考进入刷题阶段，每日错题复盘常态化；\n· 软考重点章节突破，周末集中学；\n· 减脂进入平台期管理，体脂率稳步下降；\n· 穿搭/化妆每周≥2次练习，提升外形状态；\n· 保持运动 + 泡脚 + 早睡作息稳定。',
+    '2026-10': '【10月 · 软考冲刺 + 转段】\n· 阶段②（10.11-10.24）备考时长拆分（公考+软考各1h），副业缩减；\n· 10.24 软考考试，考前模拟 + 调整状态；\n· 10.25 起转入阶段③，取消软考项，全力公考；\n· 减脂维持，避免考前焦虑暴食。',
+    '2026-11': '【11月 · 公考冲刺】\n· 阶段③全力公考：全真模拟 + 错题集中复盘；\n· 11月下旬 事业编考试；11.29 国考；\n· 每周2天宽松豁免日缓解压力；\n· 作息与运动保持，确保考试状态。',
+    '2026-12': '【12月 · 收官复盘】\n· 12.06 四川省考，考后即时复盘；\n· 等待成绩期间保持打卡纪律，不摆烂；\n· 总结全年备考，规划明年方向与副业放大；\n· 减脂成果巩固，体态目标验收。',
+  };
+  const goal = plans[ym] || '【本月目标】\n· 推进公考/软考备考主线，保持全项打卡；\n· 减脂塑形与作息管理持续执行；\n· 副业维持最低运营，不超时；\n· 月末复盘达成情况与下月调整。';
+  return { goal, summary: '' };
+}
 function loadMonthlyAll() { return Storage.get(MONTHLY_KEY, {}); }
-function loadMonthly(ym) { const all = loadMonthlyAll(); return all[ym] || { goal: '', summary: '' }; }
+function loadMonthly(ym) { const all = loadMonthlyAll(); return all[ym] || defaultMonthly(ym); }
 function saveMonthly(ym, data) { const all = loadMonthlyAll(); all[ym] = data; Storage.set(MONTHLY_KEY, all); }
 
 function gridKey(ym) { return 'checkin_grid_' + ym; }
@@ -138,7 +150,9 @@ function countItemInMonth(itemN, ym) {
 // 通用：渲染一个打卡表格
 // dates: [{y,m,d,dateStr,wkend,editable,locked}]
 // countYM: 用于「当月完成」统计的月份
-function buildTable(items, dates, countYM) {
+// opts.showCount: 是否显示「当月完成」列（每日打卡周视图关闭，打卡总览保留）
+function buildTable(items, dates, countYM, opts) {
+  const showCount = !opts || opts.showCount !== false;
   let headDays = '';
   dates.forEach(dt => {
     const cls = 'ck-th ck-day' + (dt.wkend ? ' ck-wkend' : '') + (dt.locked ? ' ck-locked' : '');
@@ -160,7 +174,7 @@ function buildTable(items, dates, countYM) {
       <td class="ck-td ck-idx">${it.n}</td>
       <td class="ck-td ck-item" title="${escapeHtml(it.rule)}">${escapeHtml(it.name)}</td>
       ${cells}
-      <td class="ck-td ck-count">${countHtml}</td>
+      ${showCount ? `<td class="ck-td ck-count">${countHtml}</td>` : ''}
     </tr>`;
   });
 
@@ -175,15 +189,15 @@ function buildTable(items, dates, countYM) {
     });
   });
   dates.forEach(dt => {
-    sumCells += `<td class="ck-td ck-sumday${(dt.wkend ? ' ck-wkend' : '') + (dt.locked ? ' ck-locked' : '')}">${perDay[dt.dateStr] || ''}</td>`;
+    sumCells += `<td class="ck-td ck-sumday${(dt.wkend ? ' ck-wkend' : '') + (dt.locked ? ' ck-locked' : '')}" data-date="${dt.dateStr}">${perDay[dt.dateStr] || ''}</td>`;
   });
 
   return `
     <div class="ck-table-wrap">
       <table class="ck-table">
-        <thead><tr><th class="ck-th ck-idx">序号</th><th class="ck-th ck-item">打卡目标</th>${headDays}<th class="ck-th ck-count">当月完成</th></tr></thead>
+        <thead><tr><th class="ck-th ck-idx">序号</th><th class="ck-th ck-item">打卡目标</th>${headDays}${showCount ? '<th class="ck-th ck-count">当月完成</th>' : ''}</tr></thead>
         <tbody>${rows}
-          <tr class="ck-sumrow"><td class="ck-td ck-idx" colspan="2">每日完成合计</td>${sumCells}<td class="ck-td ck-count"></td></tr>
+          <tr class="ck-sumrow"><td class="ck-td ck-idx" colspan="2">每日完成合计</td>${sumCells}${showCount ? '<td class="ck-td ck-count"></td>' : ''}</tr>
         </tbody>
       </table>
     </div>`;
@@ -247,7 +261,7 @@ export function initMonthlyCheckin() {
           <div class="ck-card">
             <div class="ck-card-head"><div class="ck-card-title">年度目标</div><button class="ck-edit-btn" id="ckEditAnnual">✏️ 编辑</button></div>
             <div class="ck-card-desc">备考主线 · 关键节点 · 本年度核心成果预期</div>
-            <textarea class="ck-goal-text" id="ckAnnual" disabled>${escapeHtml(g.annual)}</textarea>
+            <textarea class="ck-goal-text ck-goal-text-lg" id="ckAnnual" disabled>${escapeHtml(g.annual)}</textarea>
           </div>`;
       }
 
@@ -332,7 +346,7 @@ export function initMonthlyCheckin() {
               <div class="ck-legend"><span class="ck-lg ck-lg-done">✓完成</span><span class="ck-lg ck-lg-part">◑部分</span><span class="ck-lg ck-lg-undone">✕未完成</span></div>
             </div>
             <div class="ck-hint">点格子循环切换：空→完成→部分→未完成。仅<b>今日与昨日</b>可打卡，更早日期已锁定（灰色）。每周一自动切换到当周。</div>
-            ${buildTable(items, dates, countYM)}
+            ${buildTable(items, dates, countYM, { showCount: false })}
           </div>
           <div class="ck-card">
             <div class="ck-card-head"><div class="ck-card-title">📝 今日记录（${tM}月${tD}日）</div><button class="btn btn-primary btn-sm" id="ckSaveNote">💾 保存记录</button></div>
@@ -431,6 +445,11 @@ export function initMonthlyCheckin() {
             b.classList.add('active');
             tab = b.dataset.tab;
             itemsEditMode = false;
+            // 统计默认展示当月（仍可用月份导航查看历史月）
+            if (tab === 'stats' || tab === 'monthly' || tab === 'monthedit') {
+              const d = new Date();
+              curYM = ymOf(d.getFullYear(), d.getMonth() + 1);
+            }
             renderTab();
           };
         });
@@ -482,7 +501,7 @@ export function initMonthlyCheckin() {
         if (next) next.onclick = () => shift(1);
       }
 
-      // 通用：表格格子三态切换（今日/昨日可编辑）
+      // 通用：表格格子三态切换（今日/昨日可编辑）—— 就地更新，不整表重渲
       function bindTable() {
         body.querySelectorAll('.ck-cell:not([disabled])').forEach(cell => {
           cell.onclick = () => {
@@ -499,7 +518,24 @@ export function initMonthlyCheckin() {
             if (next === null) delete grid[item][dateStr];
             else grid[item][dateStr] = next;
             Storage.set(gridKey(ym), grid);
-            renderTab();
+            // 就地更新该格 + 当日合计 + 行计数，避免整表重渲导致滚动跳回顶部（点周日格后又要滑回）
+            cell.className = 'ck-cell' + (next ? ' ck-' + next : '');
+            cell.textContent = next ? STATE_ICON[next] : '';
+            const sumCell = body.querySelector('.ck-sumday[data-date="' + dateStr + '"]');
+            if (sumCell) {
+              let perDay = 0;
+              loadItems().forEach(it => {
+                const g = (loadGrid(ym)[it.n]) || {};
+                const st = g[dateStr];
+                if (st === 'done' || st === 'partial') perDay++;
+              });
+              sumCell.textContent = perDay || '';
+            }
+            const rowCount = cell.closest('tr').querySelector('.ck-count');
+            if (rowCount) {
+              const c = countItemInMonth(item, ym);
+              rowCount.innerHTML = `<span class="ck-done-n">${c.done}</span>${c.partial ? `<span class="ck-part-n"> ◑${c.partial}</span>` : ''}`;
+            }
           };
         });
       }
