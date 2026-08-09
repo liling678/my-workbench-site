@@ -25,6 +25,7 @@ import { initLearning } from './modules/learning/learning.js';
 import { initMakeMoney } from './modules/money/make-money.js';
 import { initBodyCare } from './modules/life/body-care.js';
 import { initSystemInfo } from './modules/system/system-info.js';
+import { initMonthlyCheckin } from './modules/checkin/monthly-checkin.js';
 
 // 注册所有板块和模块
 function registerAll() {
@@ -63,6 +64,7 @@ function registerAll() {
   initMakeMoney();
   initBodyCare();
   initSystemInfo();
+  initMonthlyCheckin();
 }
 
 // DOM 引用

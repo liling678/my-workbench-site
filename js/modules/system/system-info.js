@@ -3,7 +3,7 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v33';
+export const APP_VERSION = 'v34';
 export const APP_DATE = '2026-08-09';
 
 // 清理残留的旧版本缓存：只保留 wb-app-<version>，删除其它 wb-app-* 键，
@@ -19,6 +19,14 @@ async function cleanupStaleCaches(version) {
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v34', date: '2026-08-09',
+    items: [
+      '新增独立菜单「月度打卡表」：含总体目标 / 阅读目标 / 年度目标 / 每日打卡 四个分区',
+      '每日打卡为可勾选的月度表格：序号｜打卡目标｜1-31 日期列｜当月完成｜月度总结，周末列浅绿标注，底部「每日完成合计」按天统计',
+      '内置固定 14 项打卡项目与执行规则、三阶段备注（即日起-10.10 / 10.11-10.24 / 10.25-12.06）、宽松豁免规则；支持按月切换、数据按月独立保存，长期复用',
+    ],
+  },
   {
     version: 'v33', date: '2026-08-09',
     items: [
