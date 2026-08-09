@@ -3,11 +3,19 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v31';
-export const APP_DATE = '2026-08-05';
+export const APP_VERSION = 'v32';
+export const APP_DATE = '2026-08-09';
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v32', date: '2026-08-09',
+    items: [
+      '目标倒计时支持多个：首页在「每日一句」下方以列表展示所有未过期目标（名称 / 剩余天数 / 日期），最多显示 3 个，超出提示「管理」查看',
+      '目标倒计时位置调整：从原打卡下方移到问候卡片（每日一句）正下方，打开更顺手',
+      '云同步诊断增强：上传/拉取提示明确列出「已纳入同步的全部模块数据（共 N 类，含每日计划/打卡/体重/爆款选题/文章库/图片库/灵感库等），仅本地配置与同步日志除外」，一眼确认数据全量互通',
+    ],
+  },
   {
     version: 'v31', date: '2026-08-05',
     items: [

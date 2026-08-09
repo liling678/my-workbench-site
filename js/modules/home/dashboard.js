@@ -89,11 +89,16 @@ function saveCountdowns(list) { Storage.set(COUNTDOWN_KEY, list); }
 
 // 返回下一个即将到来的目标（按日期升序，剔除已过期）
 function getNextCountdown() {
+  const list = getUpcomingCountdowns();
+  return list[0] || null;
+}
+
+// 返回所有未过期（含今天）的目标，按日期升序
+function getUpcomingCountdowns() {
   const today = todayKey();
-  const list = loadCountdowns()
+  return loadCountdowns()
     .filter(e => e.date >= today)
     .sort((a, b) => a.date < b.date ? -1 : 1);
-  return list[0] || null;
 }
 function daysBetween(fromKey, toDateStr) {
   const a = new Date(fromKey + 'T00:00:00');
@@ -102,16 +107,21 @@ function daysBetween(fromKey, toDateStr) {
 }
 
 function renderCountdownBody() {
-  const next = getNextCountdown();
-  if (!next) {
+  const list = getUpcomingCountdowns();
+  if (!list || list.length === 0) {
     return `<div class="countdown-empty">还没有目标，点右上角「管理」添加<br>例如：软考 / 雅思 / 生日…</div>`;
   }
-  const d = daysBetween(todayKey(), next.date);
-  const label = d === 0 ? '就是今天！' : `还剩 <b>${d}</b> 天`;
-  return `
-    <div class="countdown-name">${escapeHtml(next.name)}</div>
-    <div class="countdown-big">${d}<span class="countdown-unit">天</span></div>
-    <div class="countdown-sub">${next.date} · ${label}</div>`;
+  const maxShow = 3;
+  const shown = list.slice(0, maxShow);
+  const items = shown.map(e => {
+    const d = daysBetween(todayKey(), e.date);
+    return `<div class="countdown-item">
+      <div class="countdown-item-name">${escapeHtml(e.name)}</div>
+      <div class="countdown-item-meta"><span class="countdown-item-days">${d}</span><span class="countdown-item-unit">\u5929</span><span class="countdown-item-date">${e.date}</span></div>
+    </div>`;
+  }).join('');
+  const more = list.length > maxShow ? `<div class="countdown-more">还有 ${list.length - maxShow} 个目标，点右上角「管理」查看</div>` : '';
+  return `<div class="countdown-list">${items}${more}</div>`;
 }
 
 function getGreeting() {
@@ -412,6 +422,14 @@ export function initDashboard(container) {
       </div>
     </div>
 
+    <div class="countdown-card">
+      <div class="countdown-head">
+        <div class="countdown-head-left"><span class="countdown-head-icon">\u23F3</span><span class="countdown-head-title">\u76EE\u6807\u5012\u8BA1\u65F6</span></div>
+        <span class="countdown-manage" id="cdManageBtn">\u7BA1\u7406</span>
+      </div>
+      ${renderCountdownBody()}
+    </div>
+
     ${renderDualPhotos()}
 
     <div class="stats-grid">
@@ -480,14 +498,6 @@ export function initDashboard(container) {
         </div>
         <span class="checkin-streak">\u8FDE\u7EED ${streak} \u5929\u5168\u52E4</span>
       </div>
-    </div>
-
-    <div class="countdown-card">
-      <div class="countdown-head">
-        <div class="countdown-head-left"><span class="countdown-head-icon">\u23F3</span><span class="countdown-head-title">\u76EE\u6807\u5012\u8BA1\u65F6</span></div>
-        <span class="countdown-manage" id="cdManageBtn">\u7BA1\u7406</span>
-      </div>
-      ${renderCountdownBody()}
     </div>
 
     <div class="task-section-head">

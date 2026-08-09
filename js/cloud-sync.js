@@ -443,10 +443,17 @@ function fmtDateTime(iso) {
 }
 
 // 诊断补全：在提示里带上当前生效的仓库/同步码/远端条目数/云端最后更新时间
+// 同时明确告知「已同步全部模块数据」，让用户确认打卡/体重/每日计划/爆款选题等都在同步范围
 function diagSuffix(result) {
   const cfg = loadCloudConfig() || {};
   const lc = result && result.lastCommit ? fmtDateTime(result.lastCommit) : '未知';
-  return `\n仓库=${cfg.repo || '?'} / 同步码=${cfg.syncCode || '?'} / 远端 ${result ? result.remoteKeys : '?'} 条 / 云端最后更新：${lc}`;
+  const localData = Storage.exportAll();
+  const localCount = Object.keys(localData).filter(k => k !== CONFIG_KEY && k !== TS_KEY && k !== SYNC_LOG_KEY).length;
+  const scope = `\n已纳入同步的全部模块数据（每日计划/打卡/体重/爆款选题/文章库/图片库/灵感库/草稿等，共 ${localCount} 类；本地配置与同步日志除外）`;
+  const tail = result
+    ? `\n仓库=${cfg.repo || '?'} / 同步码=${cfg.syncCode || '?'} / 云端已存 ${result.remoteKeys} 条 / 最后更新：${lc}`
+    : `\n仓库=${cfg.repo || '?'} / 同步码=${cfg.syncCode || '?'}`;
+  return scope + tail;
 }
 
 // 手动「上传到云端」：把本地数据推送到 GitHub
