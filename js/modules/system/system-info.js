@@ -3,7 +3,7 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v44';
+export const APP_VERSION = 'v45';
 export const APP_DATE = '2026-08-09';
 
 // 清理残留的旧版本缓存：只保留 wb-app-<version>，删除其它 wb-app-* 键，
@@ -19,6 +19,9 @@ async function cleanupStaleCaches(version) {
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v45', date: '2026-08-09',
+    desc: '软考/考公模块优化：① tab 标签改为整标签单行（不再两字占一行，窄屏自动换行）；②「计划目标」tab 重做为四层目标——总体/月度/周/每日，🤖 智能生成按掌握进度·薄弱点·阶段·剩余天数起草，全部可手动编辑、改完自动保存，每日计划默认 2h 并按时长智能拆分；③ 论文进度(软考)/模考进度(考公) 移入备考看板；④「每日监督」改名为「每日复盘」并新增复盘小结。' },
   {
     version: 'v44', date: '2026-08-09',
     desc: '「为人民服务」考公模块按软考备考教练模式重构：新增备考看板（倒计时到最近考试节点+三阶段进度条+行测/申论目标+累计+教练提醒+知识点图谱+阅读计划+今日聚焦）、今日计划生成器、每日监督打卡、错题库/薄弱点、模考进度、复盘·通过率。' },

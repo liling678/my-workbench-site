@@ -180,10 +180,9 @@ let cvTab = 'board';
 function renderCivil(container) {
   const TABS = [
     { id: 'board', name: '备考看板' },
-    { id: 'plan', name: '今日计划' },
-    { id: 'checkin', name: '每日监督' },
+    { id: 'plan', name: '计划目标' },
+    { id: 'checkin', name: '每日复盘' },
     { id: 'wrong', name: '错题库' },
-    { id: 'mock', name: '模考进度' },
     { id: 'review', name: '复盘·通过率' },
   ];
   container.innerHTML = `
@@ -212,7 +211,6 @@ function renderBody(container) {
   else if (cvTab === 'plan') renderPlan(body);
   else if (cvTab === 'checkin') renderCheckin(body);
   else if (cvTab === 'wrong') renderWrong(body);
-  else if (cvTab === 'mock') renderMock(body);
   else renderReview(body);
 }
 
@@ -253,7 +251,7 @@ function renderBoard(body) {
     coach = '教练提醒：备考尚未开始（8-10 起），先把整体规划过一遍，准备好资料。';
   }
   const todayCk = ck[today];
-  if (ph && ph.key !== 'exam' && !todayCk) coach += ' 今天还没打卡，记得学完来「每日监督」记一笔。';
+  if (ph && ph.key !== 'exam' && !todayCk) coach += ' 今天还没打卡，记得学完来「每日复盘」记一笔。';
 
   // 知识点完成态 / 阶段统计 / 今日聚焦
   const done = loadPointsDone();
@@ -352,7 +350,7 @@ function renderBoard(body) {
           <span class="rk-kname">${escapeHtml(p.name)}</span>
           <span class="rk-star">${starStr(p.star)}</span>
         </label>`).join('') + (hiddenCount ? `<div class="rk-kmap-more">…还有 ${hiddenCount} 个未掌握知识点，见上方「总体计划」</div>` : '') : `<div class="rk-empty">当前阶段的知识点已全部标记完成 🎉，去刷真题 / 模考巩固吧。</div>`}
-      <button class="btn btn-primary" id="cvBoardPlan" style="margin-top:10px">⚡ 生成今日完整计划</button>
+      <button class="btn btn-primary" id="cvBoardPlan" style="margin-top:10px">📋 制定计划目标</button>
     </div>
 
     <div class="rk-card">
@@ -363,6 +361,10 @@ function renderBoard(body) {
         <div class="rk-stat"><div class="rk-stat-num">${totalQuestions}</div><div class="rk-stat-label">刷题总数</div></div>
         <div class="rk-stat"><div class="rk-stat-num">${totalMocks}</div><div class="rk-stat-label">模考套数</div></div>
       </div>
+    </div>
+
+    <div class="rk-card">
+      <div id="cvMockHost"></div>
     </div>
 
     <div class="rk-card">
@@ -424,90 +426,175 @@ function renderBoard(body) {
     ctn.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === cvTab));
     renderBody(ctn);
   };
+
+  const mockHost = body.querySelector('#cvMockHost');
+  if (mockHost) renderMockInto(mockHost);
 }
 
 // ===================== 今日计划生成 =====================
-function renderPlan(body) {
+// ===================== 计划目标（总体/月度/周/每日，智能+手动） =====================
+function loadPlan() { return Storage.get('civil_plan', { overall: '', monthly: {}, weekly: {}, daily: {}, budget: 2 }); }
+function savePlan(d) { Storage.set('civil_plan', d); }
+
+function buildPlanCtx() {
   const meta = loadMeta();
   const today = todayStr();
   const ph = getPhase(today);
-  const wd = new Date().getDay();
-  const wdName = WEEK_DAYS[wd];
-  const isWeekend = (wd === 0 || wd === 6);
+  const done = loadPointsDone();
+  const allP = allPoints();
+  const undone = allP.filter(p => !done[p.name]);
+  const ck = loadCheckins();
+  const weakList = [];
+  Object.keys(ck).sort().reverse().slice(0, 14).forEach(d => { if (ck[d] && ck[d].weak) weakList.push(ck[d].weak); });
+  let studyDays = 0, totalHours = 0, totalQuestions = 0;
+  Object.values(ck).forEach(c => {
+    if (c && (c.hours > 0 || c.questions > 0 || c.mocks > 0 || c.content)) {
+      studyDays++; totalHours += Number(c.hours) || 0; totalQuestions += Number(c.questions) || 0;
+    }
+  });
+  const mocksDone = loadMocks().length;
+  const daysToExam = daysBetween(today, meta.examDate);
+  return { meta, ph, allP, done, undone, weakList, studyDays, totalHours, totalQuestions, mocksDone, daysToExam, today };
+}
 
-  let header;
-  if (ph && ph.key === 'exam') header = '已进入考试期，按节点模考 + 回归错题，调整状态轻装应考！';
-  else if (!ph) header = '当前处于备考前（8-10 之前），可先熟悉整体规划与资料，下方为参考模板。';
-  else header = `今日处于【${ph.name}】，按阶段重点 + 在职节奏生成。`;
+function phaseNameOf(ph) { return ph ? (ph.name.split(' · ')[1] || ph.name) : '备考前'; }
+
+function renderPlan(body) {
+  const today = todayStr();
+  const plan = loadPlan();
+  const ym = today.slice(0, 7);
+  const wkStart = weekMonday(today);
+  const ctx = buildPlanCtx();
 
   body.innerHTML = `
     <div class="rk-card">
-      <div class="rk-card-head">🗓 今日学习计划生成器</div>
-      <div class="rk-plan-hint">${escapeHtml(header)} 点击按钮按教练规则生成「日期 / 目标 / 时长 / 任务 / 刷题 / 模考 / 完成标准 / 复盘」完整计划。</div>
-      <button class="btn btn-primary" id="cvGenPlan">⚡ 生成今日学习计划（${wdName}）</button>
-      <div id="cvPlanOut" style="margin-top:14px"></div>
+      <div class="rk-card-head">🎯 总体目标（可编辑）</div>
+      <div class="rk-card-desc">整个备考季的大目标。点「🤖 生成」按当前数据起草，再手动微调。</div>
+      <textarea class="textarea" id="pl_overall" style="min-height:104px" placeholder="点🤖生成或自行填写">${escapeHtml(plan.overall || '')}</textarea>
+      <button class="btn btn-primary" id="pl_gen_overall" style="margin-top:6px">🤖 智能生成</button>
+    </div>
+
+    <div class="rk-card">
+      <div class="rk-card-head">🗓 月度目标 · ${ym}（可编辑）</div>
+      <div class="rk-card-desc">本月主攻方向与阶段任务。</div>
+      <textarea class="textarea" id="pl_monthly" style="min-height:88px" placeholder="点🤖生成或自行填写">${escapeHtml((plan.monthly && plan.monthly[ym]) || '')}</textarea>
+      <button class="btn" id="pl_gen_monthly" style="margin-top:6px">🤖 智能生成</button>
+    </div>
+
+    <div class="rk-card">
+      <div class="rk-card-head">📅 周目标 · ${wkStart} 起本周（可编辑）</div>
+      <div class="rk-card-desc">本周要攻克的考点与产出。</div>
+      <textarea class="textarea" id="pl_weekly" style="min-height:88px" placeholder="点🤖生成或自行填写">${escapeHtml((plan.weekly && plan.weekly[wkStart]) || '')}</textarea>
+      <button class="btn" id="pl_gen_weekly" style="margin-top:6px">🤖 智能生成</button>
+    </div>
+
+    <div class="rk-card">
+      <div class="rk-card-head">⚡ 每日目标 · ${today}（可编辑）</div>
+      <div class="rk-card-desc">按你的掌握度 / 薄弱点 / 阶段 / 剩余天数智能生成，默认 ${plan.budget || 2}h，可改时长后重新生成。</div>
+      <div class="rk-form-row">
+        <label class="rk-form-field">每日学习时长(h)
+          <input class="input" id="pl_budget" type="number" min="0.5" step="0.5" value="${escapeAttr(plan.budget || 2)}"></label>
+      </div>
+      <textarea class="textarea" id="pl_daily" style="min-height:154px" placeholder="点🤖生成或自行填写">${escapeHtml((plan.daily && plan.daily[today] && plan.daily[today].text) || '')}</textarea>
+      <button class="btn btn-primary" id="pl_gen_daily" style="margin-top:6px">🤖 智能生成（按学习情况）</button>
+    </div>
+
+    <div class="rk-card rk-plan-tip">
+      💡 所有目标都可直接在文本框里改，改完自动保存（无需点按钮）；「🤖 智能生成」会依据掌握进度 / 薄弱点 / 阶段 / 距考试天数给出建议，生成后仍可手动微调。
     </div>
   `;
 
-  body.querySelector('#cvGenPlan').onclick = () => {
-    body.querySelector('#cvPlanOut').innerHTML = buildTodayPlan(today, ph, wd, isWeekend);
-    toast('已生成今日计划');
+  const bind = (id, apply) => {
+    const el = body.querySelector('#' + id);
+    if (el) el.oninput = () => { const p = loadPlan(); apply(p, el.value); savePlan(p); };
   };
+  bind('pl_overall', (p, v) => p.overall = v);
+  bind('pl_monthly', (p, v) => { p.monthly = p.monthly || {}; p.monthly[ym] = v; });
+  bind('pl_weekly', (p, v) => { p.weekly = p.weekly || {}; p.weekly[wkStart] = v; });
+  bind('pl_daily', (p, v) => { p.daily = p.daily || {}; p.daily[today] = p.daily[today] || {}; p.daily[today].text = v; });
+  const bud = body.querySelector('#pl_budget');
+  if (bud) bud.oninput = () => { const p = loadPlan(); p.budget = Number(bud.value) || 2; savePlan(p); };
+
+  body.querySelector('#pl_gen_overall').onclick = () => { const p = loadPlan(); const t = suggestOverall(ctx); p.overall = t; savePlan(p); body.querySelector('#pl_overall').value = t; toast('已生成总体目标'); };
+  body.querySelector('#pl_gen_monthly').onclick = () => { const p = loadPlan(); const t = suggestMonthly(ctx, ym); p.monthly = p.monthly || {}; p.monthly[ym] = t; savePlan(p); body.querySelector('#pl_monthly').value = t; toast('已生成月度目标'); };
+  body.querySelector('#pl_gen_weekly').onclick = () => { const p = loadPlan(); const t = suggestWeekly(ctx, wkStart); p.weekly = p.weekly || {}; p.weekly[wkStart] = t; savePlan(p); body.querySelector('#pl_weekly').value = t; toast('已生成周目标'); };
+  body.querySelector('#pl_gen_daily').onclick = () => { const p = loadPlan(); const b = p.budget || 2; const t = suggestDaily(ctx, today, b); p.daily = p.daily || {}; p.daily[today] = p.daily[today] || {}; p.daily[today].text = t; p.daily[today].time = b; savePlan(p); body.querySelector('#pl_daily').value = t; toast('已生成每日目标'); };
 }
 
-function buildTodayPlan(today, ph, wd, isWeekend) {
-  const wdName = WEEK_DAYS[wd];
-  const evening = { 1: '言语 / 判断专项 30 题（限时 + 复盘）', 2: '资料分析速算 4 篇（计时）', 3: '申论归纳 / 分析小题 1–2 道精改', 4: '判断 + 数量混合 30 题', 5: '错题整理 + 时政 20 分钟' };
-  const focus = ph ? ph.focus : '先熟悉资料与整体规划。';
-
-  let tasks, studyTime, questions, mockTask, doneStandard;
-  if (isWeekend) {
-    tasks = [
-      ['上午（约 2h）', '学新知：按当前阶段重点推进理论（' + (ph ? ph.name.split(' · ')[1] : '基础') + '）'],
-      ['下午（约 1.5h）', '套题训练：行测分模块套题 1 套（严格计时） + 逐题复盘'],
-      ['晚上（约 0.5h）', '申论小题 / 大作文提纲 + 当日总结'],
-    ];
-    studyTime = '约 4 小时';
-    questions = '40–50 题（套题 / 计时）';
-    mockTask = '完成 1 套行测模考或申论套题（计入「模考进度」）';
-    doneStandard = '上午新知 + 下午套题 + 晚上申论全部完成；错题当天归档。';
-  } else {
-    tasks = [
-      ['上午（30min）', '复习昨日内容：快速回顾 + 温习错题'],
-      ['工作碎片（60min）', '刷题 20–30 题（言语 / 判断 / 资料轮换）+ 看解析 + 整理错题'],
-      ['晚上（90min）', evening[wd] || '行测 / 申论混合复盘'],
-    ];
-    studyTime = '约 2 小时（在职最低线）';
-    questions = '20–30 题';
-    mockTask = (wd === 6 || wd === 0) ? '周末完成，工作日按需' : '无（周末固定模考日）';
-    doneStandard = '完成以上 3 段任务；碎片刷题 ≥20 题；晚上模块有产出（笔记 / 1 题申论 / 错题归档）。';
-  }
-
-  const taskHtml = tasks.map(t => `<tr><td class="rk-plan-when">${escapeHtml(t[0])}</td><td>${escapeHtml(t[1])}</td></tr>`).join('');
-
-  return `
-    <div class="rk-plan-card">
-      <div class="rk-plan-line"><b>日期：</b>${today}（${wdName}）${isWeekend ? ' · 周末' : ' · 工作日'}</div>
-      <div class="rk-plan-line"><b>当前阶段：</b>${ph ? escapeHtml(ph.name) : '备考前'}</div>
-      <div class="rk-plan-line"><b>今日学习目标：</b>按阶段推进，保证当日产出（行测刷题 / 申论小题 / 模考至少一项落地）。</div>
-      <div class="rk-plan-line"><b>预计学习时间：</b>${escapeHtml(studyTime)}</div>
-      <div class="rk-plan-line"><b>学习内容：</b>${escapeHtml(focus)}</div>
-      <div class="rk-plan-sub">详细任务</div>
-      <table class="rk-plan-table"><tbody>${taskHtml}</tbody></table>
-      <div class="rk-plan-line"><b>刷题数量：</b>${escapeHtml(questions)}</div>
-      <div class="rk-plan-line"><b>模考任务：</b>${escapeHtml(mockTask)}</div>
-      <div class="rk-plan-line"><b>今日完成标准：</b>${escapeHtml(doneStandard)}</div>
-      <div class="rk-plan-sub">复盘问题</div>
-      <ul class="rk-plan-ul">
-        <li>今天具体学了什么？</li>
-        <li>哪些模块 / 考点还不会？（记到「每日监督 · 薄弱模块」）</li>
-        <li>明天优先补哪一块？</li>
-        <li>错题是否当天归档到「错题库」？</li>
-      </ul>
-    </div>`;
+function suggestOverall(ctx) {
+  const t = ctx.meta.targets;
+  const tot = ctx.allP.length, doneN = tot - ctx.undone.length;
+  const L = [];
+  L.push(`【总体目标】${ctx.meta.examDate}（国考）多线一次上岸，日均约 2h。`);
+  L.push(`· 行测 ≥${t.line} · 申论 ≥${t.apply}（百分制）。`);
+  L.push(`· 掌握全部 ${tot} 个知识点（已 ${doneN} / ${tot}）。`);
+  L.push(`· 刷题累计 ≥800 题（已 ${ctx.totalQuestions}）。`);
+  L.push(`· 考前完成 ≥8 套模考（已 ${ctx.mocksDone}）。`);
+  L.push(`· 每周保持 5–6 天，工作日 2h、周末 3–4h，每周留半天休息。`);
+  return L.join('\n');
 }
 
-// ===================== 每日监督 / 打卡 =====================
+function suggestMonthly(ctx, ym) {
+  const rep = ym + '-15';
+  const ph = getPhase(rep);
+  const phName = phaseNameOf(ph);
+  let pts = ph ? ctx.undone.filter(p => p.phase === ph.key) : ctx.undone;
+  const names = [...new Set(pts.map(p => p.name))];
+  const tot = ctx.allP.length, doneN = tot - ctx.undone.length;
+  const L = [];
+  L.push(`【${ym} 月度目标 · ${phName}】`);
+  L.push(`· 阶段进度：知识点已掌握 ${doneN}/${tot}，本月继续推进未掌握项。`);
+  if (names.length) L.push(`· 本月光攻：${names.slice(0, 8).join('、')}${names.length > 8 ? ' 等' : ''}。`);
+  else L.push(`· 本月以刷真题 / 模考为主，巩固已掌握模块。`);
+  L.push(`· 配套完成本阶段书单（教材 / 真题 / 模考 / 时政）。`);
+  L.push(`· 每周 ≥2 套模考（严格计时），申论每周 1 套小题 + 1 篇大作文。`);
+  return L.join('\n');
+}
+
+function suggestWeekly(ctx, wkStart) {
+  const ph = getPhase(wkStart);
+  const phName = phaseNameOf(ph);
+  const fk = ph ? (ph.key === 'exam' ? 'sprint' : ph.key) : 'base';
+  let pts = ctx.undone.filter(p => p.phase === fk).slice(0, 5);
+  if (pts.length < 5) pts = ctx.undone.slice(0, 5);
+  const L = [];
+  L.push(`【本周目标 · ${wkStart} 起 · ${phName}】`);
+  if (pts.length) L.push(`· 攻克考点：${pts.map(p => p.name).join('、')}。`);
+  else L.push(`· 考点已全部掌握，本周转刷真题 / 模考巩固。`);
+  if (ctx.weakList.length) L.push(`· 薄弱专项：${ctx.weakList.slice(0, 3).join('；')}（优先补）。`);
+  L.push(`· 刷题 ≥120 题；${fk === 'sprint' ? '模考 1 套 + ' : ''}申论每周 1 套小题 + 1 篇大作文。`);
+  L.push(`· 周末：错题二刷 + 周复盘（存「复盘·通过率」）。`);
+  return L.join('\n');
+}
+
+function suggestDaily(ctx, today, budget) {
+  const ph = ctx.ph;
+  const wd = new Date().getDay();
+  const isWeekend = (wd === 0 || wd === 6);
+  const fk = ph ? (ph.key === 'exam' ? 'sprint' : ph.key) : 'base';
+  let pts = ctx.undone.filter(p => p.phase === fk).slice(0, 2);
+  if (pts.length < 2) pts = ctx.undone.slice(0, 2);
+  const b = Number(budget) || 2;
+  const learnMin = Math.max(20, Math.round(b * 0.5 * 60));
+  const brushMin = Math.max(15, Math.round(b * 0.35 * 60));
+  const revMin = Math.max(10, b * 60 - learnMin - brushMin);
+  const blocks = [];
+  blocks.push(`① 新知/专项 ${learnMin}min：${pts.length ? pts.map(p => p.name).join('、') : '复习已掌握模块，查漏补缺'}`);
+  if (ctx.weakList.length) blocks.push(`② 薄弱攻坚 ${Math.round(brushMin * 0.5)}min：回顾「不会的知识点」→ ${ctx.weakList.slice(0, 2).join('；')}`);
+  const brushLabel = ctx.weakList.length ? `刷题 ${Math.round(brushMin * 0.5)}min` : `刷题 ${brushMin}min`;
+  blocks.push(`${ctx.weakList.length ? '③' : '②'} ${brushLabel}：行测/申论轮换，错题当天归档（累计 ${ctx.totalQuestions} 题）`);
+  if (ph && ph.key === 'sprint') blocks.push(`+ 冲刺：计时模考 1 套（行测 + 申论）。`);
+  blocks.push(`末 ${revMin}min：写今日复盘（记到「每日复盘」），规划明天。`);
+  const L = [];
+  L.push(`【今日计划 · ${b}h · ${phaseNameOf(ph)}】${isWeekend ? ' 周末' : ' 工作日'}`);
+  L.push(...blocks);
+  const fromStart = daysBetween(ctx.meta.startDate, today);
+  if (ctx.daysToExam > 0 && ctx.studyDays < Math.max(1, fromStart * 0.5)) L.push(`⚠️ 学习天数偏少（${ctx.studyDays} 天 / 已备考 ${Math.max(0, fromStart)} 天），建议加量或利用周末补进度。`);
+  if (!pts.length) L.push(`✅ 当前阶段考点已掌握，今天以刷真题 / 模考为主。`);
+  return L.join('\n');
+}
+
+// ===================== 每日复盘 / 打卡 =====================
 function renderCheckin(body) {
   const today = todayStr();
   const ck = loadCheckins();
@@ -529,7 +616,7 @@ function renderCheckin(body) {
 
   body.innerHTML = `
     <div class="rk-card">
-      <div class="rk-card-head">✅ 今日打卡（${today}）</div>
+      <div class="rk-card-head">📝 每日复盘（${today}）</div>
       <div class="rk-form">
         <div class="rk-form-row">
           <label class="rk-form-field">学习时长(h)
@@ -543,7 +630,9 @@ function renderCheckin(body) {
           <textarea class="textarea" id="ck_content" style="min-height:70px" placeholder="今天学了什么、做了哪套题 / 申论小题…">${escapeHtml(todayCk.content)}</textarea></label>
         <label class="rk-form-field">薄弱模块 / 不会的点
           <textarea class="textarea" id="ck_weak" style="min-height:60px" placeholder="卡住的地方，周末 / 复盘时集中攻破">${escapeHtml(todayCk.weak)}</textarea></label>
-        <button class="btn btn-primary" id="ck_save">💾 保存今日打卡</button>
+        <label class="rk-form-field">今日复盘小结
+          <textarea class="textarea" id="ck_review" style="min-height:60px" placeholder="今天最大的收获 / 卡点 / 明天怎么调整">${escapeHtml(todayCk.review || '')}</textarea></label>
+        <button class="btn btn-primary" id="ck_save">💾 保存今日复盘</button>
       </div>
     </div>
 
@@ -567,6 +656,7 @@ function renderCheckin(body) {
       mocks: body.querySelector('#ck_m').value,
       content: body.querySelector('#ck_content').value.trim(),
       weak: body.querySelector('#ck_weak').value.trim(),
+      review: body.querySelector('#ck_review').value.trim(),
     };
     const all = loadCheckins();
     all[d] = obj;
@@ -665,7 +755,7 @@ function openWrongForm(body, id) {
 }
 
 // ===================== 模考进度 =====================
-function renderMock(body) {
+function renderMockInto(host) {
   const list = loadMocks().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   const target = 8; // 目标模考套数
   const done = list.length;
@@ -673,8 +763,7 @@ function renderMock(body) {
   const applyMocks = list.filter(m => m.type === '申论');
   const lastLine = lineMocks[0];
   const lastApply = applyMocks[0];
-  body.innerHTML = `
-    <div class="rk-card">
+  host.innerHTML = `
       <div class="rk-card-head">📝 模考进度（目标：考前 ≥${target} 套）</div>
       <div class="rk-essay-bar">
         <div class="rk-essay-bar-fill" style="width:${Math.min(done / target * 100, 100)}%"></div>
@@ -685,7 +774,6 @@ function renderMock(body) {
         最近申论：${lastApply ? `${lastApply.score}/${lastApply.full}（${lastApply.date}）` : '—'}
       </div>
       <button class="btn btn-primary" id="mk_add" style="margin-top:6px">＋ 记录一次模考</button>
-    </div>
     <div class="rk-essay-list">
       ${list.length === 0 ? `<div class="rk-empty">还没有模考记录，进入强化 / 冲刺期后每周安排模考并记下来。</div>` :
         list.map(m => `
@@ -699,12 +787,12 @@ function renderMock(body) {
         </div>`).join('')}
     </div>
   `;
-  body.querySelector('#mk_add').onclick = () => openMockForm(body, null);
-  body.querySelectorAll('.mk-del').forEach(btn => {
+  host.querySelector('#mk_add').onclick = () => openMockForm(host, null);
+  host.querySelectorAll('.mk-del').forEach(btn => {
     btn.onclick = async () => {
       if (await confirmDialog({ title: '删除', message: '删除这条模考记录吗？', confirmText: '删除', danger: true })) {
         saveMocks(loadMocks().filter(m => m.id !== btn.dataset.id));
-        renderMock(body);
+        renderMockInto(host);
         toast('已删除');
       }
     };
@@ -748,7 +836,7 @@ function openMockForm(body, id) {
     else list.push({ id: Storage.uid(), ...payload });
     saveMocks(list);
     closeModal();
-    renderMock(body);
+    renderMockInto(body);
     toast('已保存');
   };
 }
