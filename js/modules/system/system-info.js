@@ -3,7 +3,7 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v42';
+export const APP_VERSION = 'v43';
 export const APP_DATE = '2026-08-09';
 
 // 清理残留的旧版本缓存：只保留 wb-app-<version>，删除其它 wb-app-* 键，
@@ -19,6 +19,9 @@ async function cleanupStaleCaches(version) {
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v43', date: '2026-08-09',
+    desc: '系统信息页新增「🧹 清除缓存并强制刷新」按钮：一键注销旧 Service Worker + 清空前端缓存后强制重载，解决 PWA 图标卡在旧版本（手机浏览器正常、PWA 报错）的问题。本地数据(localStorage)不受影响。' },
   {
     version: 'v42', date: '2026-08-09',
     desc: '修复系统信息页崩溃：v41 的更新日志条目用了 desc 字段而渲染层只认 items 数组，导致 .map 抛错显示「模块加载失败」。现已兼容 desc 与 items 两种格式。' },
@@ -319,6 +322,7 @@ export function initSystemInfo() {
               <div style="font-size:12px;color:var(--text-muted)">发布日期：${APP_DATE}</div>
             </div>
             <button class="btn btn-primary" id="checkUpdateBtn">🔄 检查更新</button>
+            <button class="btn" id="clearCacheBtn" style="margin-left:8px">🧹 清除缓存并强制刷新</button>
           </div>
           <div id="runStatus" style="margin-top:12px;font-size:13px;line-height:1.9;background:var(--bg-input);border-radius:8px;padding:10px 12px">正在读取运行状态…</div>
         </div>
@@ -413,6 +417,31 @@ export function initSystemInfo() {
             toast('检查更新出错：' + String(msg).slice(0, 50));
           }
           btn.disabled = false; btn.textContent = '🔄 检查更新';
+        }
+      };
+
+      // —— 清除缓存并强制刷新：注销旧 SW + 清空缓存，彻底解决 PWA 卡旧版本 ——
+      container.querySelector('#clearCacheBtn').onclick = async () => {
+        if (!confirm('将清除本应用的离线缓存并注销旧的服务工作线程，随后强制拉取最新版本。\n\n注意：你的本地数据（任务/打卡/笔记等 localStorage）不受影响，仅清掉前端代码缓存。\n需保持 VPN/外网连通，否则清完重加载不到新代码。\n\n确定继续？')) return;
+        const cb = container.querySelector('#clearCacheBtn');
+        cb.disabled = true; cb.textContent = '清除中…';
+        try {
+          // 1) 注销所有 Service Worker 注册（同源共享，PWA 一并清除）
+          if ('serviceWorker' in navigator) {
+            const regs = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(regs.map(r => r.unregister()));
+          }
+          // 2) 清空所有缓存（Cache Storage 按源共享）
+          if ('caches' in window) {
+            const keys = await caches.keys();
+            await Promise.all(keys.map(k => caches.delete(k)));
+          }
+          toast('已清除旧缓存，正在强制加载最新版本…');
+          // 3) 强制从网络重载（此时已无 SW，直接拉最新代码）
+          setTimeout(() => location.reload(true), 500);
+        } catch (e) {
+          toast('清除失败：' + (e && (e.message || e.name) || '未知错误'));
+          cb.disabled = false; cb.textContent = '🧹 清除缓存并强制刷新';
         }
       };
     },
