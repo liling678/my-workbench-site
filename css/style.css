@@ -1559,3 +1559,76 @@ input, textarea, select { font-family: inherit; }
 .ck-stat-num { font-size: 24px; font-weight: 700; color: var(--primary); line-height: 1.1; }
 .ck-stat-label { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
 .ck-stat-table { min-width: 420px; }
+
+/* ===================== 软考学习 ===================== */
+.rk-countdown { background: linear-gradient(135deg,#0F6E56,#15916f); color:#fff; border-radius: var(--radius-lg); padding: 22px; text-align:center; margin-bottom: 14px; }
+.rk-countdown-near { background: linear-gradient(135deg,#c0392b,#e0625a); }
+.rk-countdown-num { font-size: 46px; font-weight: 800; line-height: 1; }
+.rk-countdown-label { font-size: 13px; opacity: 0.9; margin-top: 6px; }
+.rk-coach { background: var(--primary-bg, #eaf5f0); border: 0.5px solid var(--primary, #0F6E56); color: var(--text-body); border-radius: var(--radius-lg); padding: 12px 14px; font-size: 14px; line-height: 1.6; margin-bottom: 14px; }
+.rk-targets { display: flex; gap: 10px; margin-bottom: 14px; }
+.rk-target { flex: 1; background: var(--bg-card); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 14px 8px; text-align: center; }
+.rk-target-num { font-size: 22px; font-weight: 700; color: var(--primary, #0F6E56); }
+.rk-target-label { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+.rk-card { background: var(--bg-card); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 16px; margin-bottom: 14px; }
+.rk-card-head { font-size: 15px; font-weight: 600; margin-bottom: 10px; color: var(--text-body); }
+.rk-card-desc { font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 10px; }
+.rk-phases { display: flex; flex-direction: column; gap: 0; }
+.rk-phase { display: flex; align-items: center; gap: 10px; padding: 8px 0; position: relative; }
+.rk-phase-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--border); flex: none; }
+.rk-phase.on .rk-phase-dot { background: var(--primary, #0F6E56); box-shadow: 0 0 0 4px rgba(15,110,86,.15); }
+.rk-phase.done .rk-phase-dot { background: #9bd3bf; }
+.rk-phase-name { font-size: 14px; font-weight: 600; }
+.rk-phase-date { font-size: 12px; color: var(--text-muted); margin-left: auto; }
+.rk-phase.on .rk-phase-name { color: var(--primary, #0F6E56); }
+.rk-phase-focus { font-size: 13px; color: var(--text-muted); line-height: 1.7; margin-top: 10px; padding-top: 10px; border-top: 0.5px dashed var(--border); }
+.rk-stats, .rk-week-stats { display: flex; gap: 10px; }
+.rk-stat { flex: 1; background: var(--bg-input); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 14px 8px; text-align: center; }
+.rk-stat-num { font-size: 22px; font-weight: 700; color: var(--primary, #0F6E56); line-height: 1.1; }
+.rk-stat-label { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+.rk-meta-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.rk-meta-field { flex: 1; min-width: 130px; font-size: 12px; color: var(--text-muted); display: flex; flex-direction: column; gap: 4px; }
+.rk-meta-field .input { width: 100%; }
+.rk-meta-hint { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+.rk-coach-desc { background: var(--bg-card); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 10px 14px; }
+.rk-coach-desc summary { cursor: pointer; font-size: 13px; color: var(--text-muted); }
+.rk-coach-desc-body { font-size: 13px; color: var(--text-muted); line-height: 1.7; margin-top: 8px; }
+.rk-plan-hint { font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 12px; }
+.rk-plan-card { background: var(--bg-input); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px; font-size: 14px; line-height: 1.7; }
+.rk-plan-line { margin-bottom: 6px; }
+.rk-plan-sub { font-weight: 600; margin: 12px 0 6px; color: var(--primary, #0F6E56); }
+.rk-plan-table { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
+.rk-plan-table td { border: 0.5px solid var(--border); padding: 8px 10px; font-size: 13px; vertical-align: top; }
+.rk-plan-when { white-space: nowrap; font-weight: 600; background: var(--bg-card); width: 110px; }
+.rk-plan-ul { margin: 0; padding-left: 20px; font-size: 13px; color: var(--text-muted); line-height: 1.8; }
+.rk-form { display: flex; flex-direction: column; gap: 10px; }
+.rk-form-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.rk-form-field { font-size: 12px; color: var(--text-muted); display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 120px; }
+.rk-form-field .input, .rk-form-field .textarea { width: 100%; }
+.rk-empty { text-align: center; color: var(--text-muted); font-size: 13px; padding: 18px; }
+.rk-hist-list { display: flex; flex-direction: column; gap: 10px; }
+.rk-hist-item { background: var(--bg-input); border: 0.5px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.rk-hist-date { font-weight: 600; font-size: 13px; }
+.rk-hist-meta { font-size: 12px; color: var(--text-muted); margin: 3px 0; }
+.rk-hist-content { font-size: 13px; line-height: 1.6; }
+.rk-hist-weak { font-size: 12px; color: #B5780F; margin-top: 3px; }
+.rk-essay-bar { position: relative; height: 26px; background: var(--bg-input); border: 0.5px solid var(--border); border-radius: 13px; overflow: hidden; margin-bottom: 6px; }
+.rk-essay-bar-fill { position: absolute; inset: 0 auto 0 0; background: var(--primary, #0F6E56); }
+.rk-essay-bar-text { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: var(--text-body); }
+.rk-essay-list { display: flex; flex-direction: column; gap: 10px; }
+.rk-essay-item { background: var(--bg-card); border: 0.5px solid var(--border); border-radius: 10px; padding: 12px; }
+.rk-essay-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.rk-essay-topic { font-weight: 600; font-size: 14px; }
+.rk-essay-row { display: flex; align-items: center; gap: 10px; }
+.rk-essay-words { max-width: 120px; }
+.rk-essay-date { font-size: 12px; color: var(--green, #1a9d5a); }
+.rk-pass-num { font-size: 44px; font-weight: 800; color: var(--primary, #0F6E56); line-height: 1; text-align: center; }
+.rk-pass-num span { font-size: 20px; margin-left: 2px; }
+.rk-pass-bar { height: 14px; background: var(--bg-input); border: 0.5px solid var(--border); border-radius: 7px; overflow: hidden; margin: 10px 0 8px; }
+.rk-pass-fill { height: 100%; background: var(--primary, #0F6E56); }
+.rk-pass-band { text-align: center; font-weight: 600; font-size: 15px; padding: 6px; border-radius: 8px; }
+.rk-pass-band.pass-high { background: #e3f6ec; color: #1a9d5a; }
+.rk-pass-band.pass-mid { background: #fcf3d6; color: #b58a0e; }
+.rk-pass-band.pass-low { background: #fbe6d8; color: #c8702a; }
+.rk-pass-band.pass-bad { background: #fbe3e1; color: #c0392b; }
+.badge-gray { background: #eceff1; color: #607d8b; }

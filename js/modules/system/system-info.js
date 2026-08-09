@@ -3,7 +3,7 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v39';
+export const APP_VERSION = 'v40';
 export const APP_DATE = '2026-08-09';
 
 // 清理残留的旧版本缓存：只保留 wb-app-<version>，删除其它 wb-app-* 键，
@@ -19,6 +19,16 @@ async function cleanupStaleCaches(version) {
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v40', date: '2026-08-09',
+    items: [
+      '新增「软考学习」菜单（挂在「杂七杂八的学习」下）：软考高级系统规划与管理师一次通过备考教练',
+      '备考看板：考试倒计时、三阶段进度、目标分(综合/案例/论文)、累计数据、教练每日提醒',
+      '今日计划生成器：按阶段+工作日/周末自动生成结构化学习计划（目标/时长/任务/刷题/论文/完成标准/复盘）',
+      '每日监督打卡：时长/刷题/论文/完成内容/不会的知识点 + 历史 + 已完成章节记录',
+      '错题库、论文进度(5篇模板+状态切换+字数)、每周复盘生成、通过率实时评估',
+    ]
+  },
   {
     version: 'v39', date: '2026-08-09',
     items: [

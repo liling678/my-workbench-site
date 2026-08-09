@@ -1,5 +1,6 @@
 // learning.js — 杂七杂八的学习：塔罗牌学习 + 英语学习每日计划
 import { registerSection, registerModule, Icons } from '../../registry.js';
+import { initRuankao } from './ruankao.js';
 import { Storage } from '../../storage.js';
 import { openModal, closeModal, confirmDialog, toast, fmtDate, escapeHtml } from '../../ui.js';
 
@@ -137,6 +138,7 @@ function ensureCivilSeed() {
 
 export function initLearning() {
   registerSection('learning', '杂七杂八的学习', { icon: Icons.book });
+  initRuankao();
 
   // 塔罗牌学习
   registerModule('learning-tarot', {
