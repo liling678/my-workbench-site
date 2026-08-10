@@ -3,8 +3,8 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v45';
-export const APP_DATE = '2026-08-09';
+export const APP_VERSION = 'v46';
+export const APP_DATE = '2026-08-10';
 
 // 清理残留的旧版本缓存：只保留 wb-app-<version>，删除其它 wb-app-* 键，
 // 避免多个版本缓存并存导致「本机缓存与代码版本不一致」的误报。
@@ -19,6 +19,9 @@ async function cleanupStaleCaches(version) {
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v46', date: '2026-08-10',
+    desc: '「计划目标」每层目标改为「只读展示 + ✏️ 编辑 + 💾 保存 + ↩ 取消」模式：智能生成后也需先进入编辑再保存，避免误改；保存后才写入 Storage，取消则恢复上次内容。软考与考公模块同步改造。' },
   {
     version: 'v45', date: '2026-08-09',
     desc: '软考/考公模块优化：① tab 标签改为整标签单行（不再两字占一行，窄屏自动换行）；②「计划目标」tab 重做为四层目标——总体/月度/周/每日，🤖 智能生成按掌握进度·薄弱点·阶段·剩余天数起草，全部可手动编辑、改完自动保存，每日计划默认 2h 并按时长智能拆分；③ 论文进度(软考)/模考进度(考公) 移入备考看板；④「每日监督」改名为「每日复盘」并新增复盘小结。' },

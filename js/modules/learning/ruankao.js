@@ -442,59 +442,96 @@ function renderPlan(body) {
   const wkStart = weekMonday(today);
   const ctx = buildPlanCtx();
 
-  body.innerHTML = `
-    <div class="rk-card">
-      <div class="rk-card-head">🎯 总体目标（可编辑）</div>
-      <div class="rk-card-desc">整个备考季的大目标。点「🤖 生成」按当前数据起草，再手动微调。</div>
-      <textarea class="textarea" id="pl_overall" style="min-height:104px" placeholder="点🤖生成或自行填写">${escapeHtml(plan.overall || '')}</textarea>
-      <button class="btn btn-primary" id="pl_gen_overall" style="margin-top:6px">🤖 智能生成</button>
-    </div>
-
-    <div class="rk-card">
-      <div class="rk-card-head">🗓 月度目标 · ${ym}（可编辑）</div>
-      <div class="rk-card-desc">本月主攻方向与阶段任务。</div>
-      <textarea class="textarea" id="pl_monthly" style="min-height:88px" placeholder="点🤖生成或自行填写">${escapeHtml((plan.monthly && plan.monthly[ym]) || '')}</textarea>
-      <button class="btn" id="pl_gen_monthly" style="margin-top:6px">🤖 智能生成</button>
-    </div>
-
-    <div class="rk-card">
-      <div class="rk-card-head">📅 周目标 · ${wkStart} 起本周（可编辑）</div>
-      <div class="rk-card-desc">本周要攻克的考点与产出。</div>
-      <textarea class="textarea" id="pl_weekly" style="min-height:88px" placeholder="点🤖生成或自行填写">${escapeHtml((plan.weekly && plan.weekly[wkStart]) || '')}</textarea>
-      <button class="btn" id="pl_gen_weekly" style="margin-top:6px">🤖 智能生成</button>
-    </div>
-
-    <div class="rk-card">
-      <div class="rk-card-head">⚡ 每日目标 · ${today}（可编辑）</div>
-      <div class="rk-card-desc">按你的掌握度 / 薄弱点 / 阶段 / 剩余天数智能生成，默认 ${plan.budget || 2}h，可改时长后重新生成。</div>
-      <div class="rk-form-row">
-        <label class="rk-form-field">每日学习时长(h)
-          <input class="input" id="pl_budget" type="number" min="0.5" step="0.5" value="${escapeAttr(plan.budget || 2)}"></label>
+  const viewText = (s) => escapeHtml(s || '').replace(/\n/g, '<br>') || '';
+  const planCard = (id, title, desc, value, minH, extraTop = '') => `
+    <div class="rk-card rk-plan-card" id="card_${id}">
+      <div class="rk-card-head">${title}</div>
+      <div class="rk-card-desc">${desc}</div>
+      ${extraTop}
+      <div class="rk-plan-view" id="view_${id}">${viewText(value)}</div>
+      <textarea class="textarea rk-plan-edit" id="edit_${id}" style="display:none;min-height:${minH}px" placeholder="点 🤖 智能生成 或 ✏️ 编辑 开始填写">${escapeHtml(value || '')}</textarea>
+      <div class="rk-plan-actions">
+        <button class="btn btn-sm" id="btn_edit_${id}">✏️ 编辑</button>
+        <button class="btn btn-sm btn-primary" id="btn_gen_${id}">🤖 智能生成</button>
+        <button class="btn btn-sm btn-primary" id="btn_save_${id}" style="display:none">💾 保存</button>
+        <button class="btn btn-sm" id="btn_cancel_${id}" style="display:none">↩ 取消</button>
       </div>
-      <textarea class="textarea" id="pl_daily" style="min-height:154px" placeholder="点🤖生成或自行填写">${escapeHtml((plan.daily && plan.daily[today] && plan.daily[today].text) || '')}</textarea>
-      <button class="btn btn-primary" id="pl_gen_daily" style="margin-top:6px">🤖 智能生成（按学习情况）</button>
-    </div>
-
-    <div class="rk-card rk-plan-tip">
-      💡 所有目标都可直接在文本框里改，改完自动保存（无需点按钮）；「🤖 智能生成」会依据掌握进度 / 薄弱点 / 阶段 / 距考试天数给出建议，生成后仍可手动微调。
     </div>
   `;
 
-  const bind = (id, apply) => {
-    const el = body.querySelector('#' + id);
-    if (el) el.oninput = () => { const p = loadPlan(); apply(p, el.value); savePlan(p); };
+  const dailyExtra = `
+    <div class="rk-form-row" style="margin-bottom:10px">
+      <label class="rk-form-field">每日学习时长(h)
+        <input class="input" id="pl_budget" type="number" min="0.5" step="0.5" value="${escapeAttr(plan.budget || 2)}"></label>
+    </div>`;
+
+  body.innerHTML = `
+    ${planCard('pl_overall', '🎯 总体目标', '整个备考季的大目标。点「🤖 智能生成」按当前数据起草，再手动微调，最后点「💾 保存」。', plan.overall || '', 104)}
+    ${planCard('pl_monthly', `🗓 月度目标 · ${ym}`, '本月主攻方向与阶段任务。', (plan.monthly && plan.monthly[ym]) || '', 88)}
+    ${planCard('pl_weekly', `📅 周目标 · ${wkStart} 起本周`, '本周要攻克的考点与产出。', (plan.weekly && plan.weekly[wkStart]) || '', 88)}
+    ${planCard('pl_daily', `⚡ 每日目标 · ${today}`, `按掌握度 / 薄弱点 / 阶段 / 剩余天数智能生成，默认 ${plan.budget || 2}h，可改时长后重新生成。`, (plan.daily && plan.daily[today] && plan.daily[today].text) || '', 154, dailyExtra)}
+
+    <div class="rk-card rk-plan-tip">
+      💡 每层目标默认只读展示；点「✏️ 编辑」进入编辑模式，改完后「💾 保存」才会写入；「🤖 智能生成」会依据掌握进度 / 薄弱点 / 阶段 / 距考试天数给出建议，生成后仍可手动调整再保存。
+    </div>
+  `;
+
+  const bindCard = (id, readValue, writeValue, generateFn) => {
+    const card = body.querySelector('#card_' + id);
+    const view = body.querySelector('#view_' + id);
+    const edit = body.querySelector('#edit_' + id);
+    const btnEdit = body.querySelector('#btn_edit_' + id);
+    const btnGen = body.querySelector('#btn_gen_' + id);
+    const btnSave = body.querySelector('#btn_save_' + id);
+    const btnCancel = body.querySelector('#btn_cancel_' + id);
+    const original = readValue();
+
+    const setEditing = (on) => {
+      card.classList.toggle('editing', on);
+      if (on) { edit.style.display = 'block'; view.style.display = 'none'; edit.focus(); }
+      else { edit.style.display = 'none'; view.style.display = ''; }
+    };
+
+    btnEdit.onclick = () => { edit.value = readValue(); setEditing(true); };
+    btnCancel.onclick = () => { edit.value = readValue(); setEditing(false); };
+    btnSave.onclick = () => {
+      const v = edit.value.trim();
+      writeValue(v);
+      view.innerHTML = viewText(v);
+      setEditing(false);
+      toast('已保存');
+    };
+    btnGen.onclick = () => {
+      const v = generateFn();
+      edit.value = v;
+      view.innerHTML = viewText(v);
+      setEditing(true);
+      toast('已生成，可手动调整后保存');
+    };
   };
-  bind('pl_overall', (p, v) => p.overall = v);
-  bind('pl_monthly', (p, v) => { p.monthly = p.monthly || {}; p.monthly[ym] = v; });
-  bind('pl_weekly', (p, v) => { p.weekly = p.weekly || {}; p.weekly[wkStart] = v; });
-  bind('pl_daily', (p, v) => { p.daily = p.daily || {}; p.daily[today] = p.daily[today] || {}; p.daily[today].text = v; });
+
+  bindCard('pl_overall',
+    () => loadPlan().overall || '',
+    (v) => { const p = loadPlan(); p.overall = v; savePlan(p); },
+    () => suggestOverall(ctx));
+
+  bindCard('pl_monthly',
+    () => { const p = loadPlan(); return (p.monthly && p.monthly[ym]) || ''; },
+    (v) => { const p = loadPlan(); p.monthly = p.monthly || {}; p.monthly[ym] = v; savePlan(p); },
+    () => suggestMonthly(ctx, ym));
+
+  bindCard('pl_weekly',
+    () => { const p = loadPlan(); return (p.weekly && p.weekly[wkStart]) || ''; },
+    (v) => { const p = loadPlan(); p.weekly = p.weekly || {}; p.weekly[wkStart] = v; savePlan(p); },
+    () => suggestWeekly(ctx, wkStart));
+
+  bindCard('pl_daily',
+    () => { const p = loadPlan(); return (p.daily && p.daily[today] && p.daily[today].text) || ''; },
+    (v) => { const p = loadPlan(); p.daily = p.daily || {}; p.daily[today] = p.daily[today] || {}; p.daily[today].text = v; savePlan(p); },
+    () => { const b = Number(body.querySelector('#pl_budget').value) || 2; const p = loadPlan(); p.budget = b; savePlan(p); return suggestDaily(ctx, today, b); });
+
   const bud = body.querySelector('#pl_budget');
   if (bud) bud.oninput = () => { const p = loadPlan(); p.budget = Number(bud.value) || 2; savePlan(p); };
-
-  body.querySelector('#pl_gen_overall').onclick = () => { const p = loadPlan(); const t = suggestOverall(ctx); p.overall = t; savePlan(p); body.querySelector('#pl_overall').value = t; toast('已生成总体目标'); };
-  body.querySelector('#pl_gen_monthly').onclick = () => { const p = loadPlan(); const t = suggestMonthly(ctx, ym); p.monthly = p.monthly || {}; p.monthly[ym] = t; savePlan(p); body.querySelector('#pl_monthly').value = t; toast('已生成月度目标'); };
-  body.querySelector('#pl_gen_weekly').onclick = () => { const p = loadPlan(); const t = suggestWeekly(ctx, wkStart); p.weekly = p.weekly || {}; p.weekly[wkStart] = t; savePlan(p); body.querySelector('#pl_weekly').value = t; toast('已生成周目标'); };
-  body.querySelector('#pl_gen_daily').onclick = () => { const p = loadPlan(); const b = p.budget || 2; const t = suggestDaily(ctx, today, b); p.daily = p.daily || {}; p.daily[today] = p.daily[today] || {}; p.daily[today].text = t; p.daily[today].time = b; savePlan(p); body.querySelector('#pl_daily').value = t; toast('已生成每日目标'); };
 }
 
 function suggestOverall(ctx) {
