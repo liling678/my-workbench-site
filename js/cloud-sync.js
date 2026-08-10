@@ -118,8 +118,15 @@ export function loadCloudConfig() { return Storage.get(CONFIG_KEY, null); }
 function saveCloudConfig(c) { Storage.set(CONFIG_KEY, c); }
 function loadTs() { return Storage.get(TS_KEY, {}); }
 function saveTs(t) { Storage.set(TS_KEY, t); }
-function loadSyncLog() { return Storage.get(SYNC_LOG_KEY, {}); }
+function loadSyncLog() { return Storage.get(SYNC_LOG_KEY, { history: [] }); }
 function saveSyncLog(l) { Storage.set(SYNC_LOG_KEY, l); }
+function addSyncHistory(record) {
+  const log = loadSyncLog();
+  log.history = log.history || [];
+  log.history.unshift({ time: Date.now(), ...record });
+  if (log.history.length > 20) log.history = log.history.slice(0, 20);
+  saveSyncLog(log);
+}
 
 // 友好显示同步时间：今天/昨天 + 时分，更早则 MM-DD HH:mm
 export function fmtSyncTime(ts) {
@@ -468,13 +475,16 @@ export async function pushNow(showToast = true, opts = {}) {
     log.lastPush = Date.now();
     log.lastPushCount = pushed;
     saveSyncLog(log);
+    addSyncHistory({ dir: 'up', status: 'ok', count: pushed, message: pushed > 0 ? `已上传 ${pushed} 条` : '没有新数据需要上传' });
     if (showToast) toast((pushed > 0 ? `已上传 ${pushed} 条到云端` : '没有新数据需要上传') + diagSuffix());
     updateSyncLogView();
     return pushed;
   } catch (e) {
     console.error('pushNow failed', e);
     setStatus('error');
+    addSyncHistory({ dir: 'up', status: 'error', message: e.message || '网络错误' });
     if (showToast) toast('上传失败：' + (e.message || '网络错误'));
+    updateSyncLogView();
     return 0;
   }
 }
@@ -491,6 +501,7 @@ export async function pullNow(showToast = true, opts = {}) {
     log.lastPull = Date.now();
     log.lastPullCount = result.updated;
     saveSyncLog(log);
+    addSyncHistory({ dir: 'down', status: 'ok', count: result.updated, remoteKeys: result.remoteKeys, message: result.notFound ? '云端文件不存在' : result.updated > 0 ? `已拉取 ${result.updated} 条` : '云端与本地一致' });
     updateSyncLogView();
     // 关闭设置弹窗并刷新当前页面，让拉取的数据立即显示（无需重启）
     try { closeModal(); } catch (e) {}
@@ -513,6 +524,8 @@ export async function pullNow(showToast = true, opts = {}) {
   } catch (e) {
     console.error('pullNow failed', e);
     setStatus('error');
+    addSyncHistory({ dir: 'down', status: 'error', message: e.message || '网络错误' });
+    updateSyncLogView();
     if (showToast) toast('拉取失败：' + (e.message || '网络错误') + '\n（如网络被拦截，请在能连 GitHub 的网络下操作，或部署自有代理）');
     return 0;
   }
@@ -531,16 +544,28 @@ function setStatus(s) {
 
 // 顶栏同步状态按钮已移除：当前版本严格采用手动上传/拉取，避免造成自动同步的误解。
 
-// 同步记录展示：设置弹窗内实时显示上次上传/拉取时间
+// 同步记录展示：设置弹窗内实时显示上次上传/拉取时间 + 最近操作历史（含失败）
 function updateSyncLogView() {
   const el = document.getElementById('cloudSyncLog');
   if (!el) return;
   const log = loadSyncLog();
   const pushTxt = log.lastPush ? `${fmtSyncTime(log.lastPush)}（${log.lastPushCount} 条）` : '尚未上传';
   const pullTxt = log.lastPull ? `${fmtSyncTime(log.lastPull)}（${log.lastPullCount} 条）` : '尚未拉取';
+  const history = (log.history || []).slice(0, 5);
+  const histHtml = history.length === 0 ? '' : `
+    <div style="margin-top:10px;padding-top:10px;border-top:0.5px dashed var(--border)">
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">最近操作（含失败记录）</div>
+      ${history.map(h => {
+        const icon = h.dir === 'up' ? '⬆' : '⬇';
+        const status = h.status === 'ok' ? '✅' : '❌';
+        const count = h.count !== undefined ? `（${h.count} 条）` : '';
+        return `<div class="sync-log-row" style="font-size:12px"><span class="sync-log-dot ${h.status === 'ok' ? 'up' : 'err'}"></span>${status} ${icon} ${fmtSyncTime(h.time)} ${count}${h.message ? ' · ' + escapeHtml(h.message) : ''}</div>`;
+      }).join('')}
+    </div>`;
   el.innerHTML = `
     <div class="sync-log-row"><span class="sync-log-dot up"></span>上次上传：<b>${pushTxt}</b></div>
-    <div class="sync-log-row"><span class="sync-log-dot down"></span>上次拉取：<b>${pullTxt}</b></div>`;
+    <div class="sync-log-row"><span class="sync-log-dot down"></span>上次拉取：<b>${pullTxt}</b></div>
+    ${histHtml}`;
 }
 
 const GUIDE_STEPS = `
@@ -655,17 +680,19 @@ export function openSyncSettings() {
     const owner = document.getElementById('cloudOwner').value.trim();
     const repo = document.getElementById('cloudRepo').value.trim();
     const pat = document.getElementById('cloudPat').value.trim();
+    const syncCode = document.getElementById('cloudCode').value.trim();
     const proxy = document.getElementById('cloudProxy').value.trim();
     if (!owner || !repo || !pat) { toast('先填 Owner / Repository / Token'); return; }
-    // 关键修复：把输入框里的代理 URL 直接传进 ghFetch（第三参数），不走 storage 路径，
-    // 这样即使 storage 缓存旧值也不会出错。顺便把死代理清空，重新探测。
-    if (proxy) {
-      deadProxies.clear();
-      // 同时也写一份到 storage（用户点保存就不用重复填了）
-      const cfg = loadCloudConfig() || { pat, owner, repo, syncCode: '' };
-      cfg.customProxy = proxy;
-      saveCloudConfig(cfg);
-    }
+    // 把当前输入框的值先写入 storage，让后续读取同步文件等诊断逻辑用到最新配置
+    deadProxies.clear();
+    const cfg = loadCloudConfig() || { pat, owner, repo, syncCode: syncCode || '', customProxy: proxy };
+    cfg.pat = pat; cfg.owner = owner; cfg.repo = repo;
+    if (syncCode) cfg.syncCode = syncCode;
+    if (proxy) cfg.customProxy = proxy;
+    saveCloudConfig(cfg);
+    ready = false;
+    await initCloud();
+
     try {
       const res = await ghFetch(`https://api.github.com/repos/${owner}/${repo}`, {
         headers: { 'Authorization': 'Bearer ' + pat, 'Accept': 'application/vnd.github+json' }
@@ -673,7 +700,26 @@ export function openSyncSettings() {
       if (res.status === 401) return toast('❌ Token 无效或权限不足（确认勾了 repo）');
       if (res.status === 404) return toast('❌ 仓库不存在，检查 Owner / Repository');
       if (!res.ok) return toast('❌ 连接失败：' + res.status);
-      toast('✅ 连接成功，仓库可达');
+
+      // 再尝试读取同步文件，给出更直观的诊断
+      let fileInfo = '';
+      if (syncCode) {
+        try {
+          const remote = await readRemote();
+          if (remote && remote.notFound) {
+            fileInfo = `\n⚠️ 云端还没有此同步码的数据文件。请先在另一设备点「上传到云端」。`;
+          } else if (remote && remote.data) {
+            const keys = Object.keys(remote.data).length;
+            fileInfo = `\n同步文件存在：${keys} 条数据，云端最后更新：${fmtDateTime(remote.lastCommit)}`;
+          } else {
+            fileInfo = `\n读取同步文件返回异常`;
+          }
+        } catch (fe) { fileInfo = '\n读取同步文件时出错：' + (fe.message || '网络错误'); }
+      } else {
+        fileInfo = '\n填写「同步码」后可进一步检测云端数据文件。';
+      }
+
+      toast('✅ 连接成功，仓库可达' + fileInfo);
     } catch (e) { toast('连接失败：' + (e.message || '网络错误') + '\n点开上方「网络自救指南」看看怎么办'); }
   };
   document.getElementById('cloudSaveBtn').onclick = async () => {

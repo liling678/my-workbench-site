@@ -3,7 +3,7 @@ import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v46';
+export const APP_VERSION = 'v47';
 export const APP_DATE = '2026-08-10';
 
 // 清理残留的旧版本缓存：只保留 wb-app-<version>，删除其它 wb-app-* 键，
@@ -19,6 +19,9 @@ async function cleanupStaleCaches(version) {
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v47', date: '2026-08-10',
+    desc: '云同步诊断增强：①「测试连接」现在会读取同步文件并报告「云端有几条数据 / 最后更新时间」，方便判断手机端是否真上传成功；② 设置面板新增「最近操作（含失败记录）」列表，上传/拉取失败也会留下痕迹；③ 上传/拉取失败时同样刷新日志，避免旧时间误导。' },
   {
     version: 'v46', date: '2026-08-10',
     desc: '「计划目标」每层目标改为「只读展示 + ✏️ 编辑 + 💾 保存 + ↩ 取消」模式：智能生成后也需先进入编辑再保存，避免误改；保存后才写入 Storage，取消则恢复上次内容。软考与考公模块同步改造。' },

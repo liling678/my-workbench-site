@@ -218,6 +218,7 @@ input, textarea, select { font-family: inherit; }
 .sync-log-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 .sync-log-dot.up { background: var(--primary); }
 .sync-log-dot.down { background: #2b8a6b; }
+.sync-log-dot.err { background: #dc3545; }
 .btn-xs { padding: 3px 10px; font-size: 12px; }
 .sql-block { background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 10px 12px; font-size: 12px; line-height: 1.5; overflow-x: auto; white-space: pre; margin: 6px 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 
