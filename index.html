@@ -92,6 +92,8 @@
           window.addEventListener('online', () => reg.update && reg.update());
           // 新 SW 接管页面时自动刷新一次，拿到最新内容（仅更新场景，首次安装不误刷）
           navigator.serviceWorker.addEventListener('controllerchange', () => {
+            // 记录「本次更新到新版本」的精确时间，供系统信息页显示
+            try { localStorage.setItem('wb_app_updated_at', String(Date.now())); } catch (e) {}
             if (hadController && !reloaded) {
               reloaded = true;
               window.location.reload();

@@ -4,8 +4,16 @@ import { toast, escapeHtml } from '../../ui.js';
 import { backupExport } from '../../storage.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v49';
+export const APP_VERSION = 'v50';
 export const APP_DATE = '2026-08-16';
+
+// 把时间戳格式化为「YYYY-MM-DD HH:mm:ss」（带具体时间）
+function fmtDateTime(ts) {
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return '';
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
 
 // 清理残留的旧版本缓存：只保留 wb-app-<version>，删除其它 wb-app-* 键，
 // 避免多个版本缓存并存导致「本机缓存与代码版本不一致」的误报。
@@ -20,6 +28,9 @@ async function cleanupStaleCaches(version) {
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v50', date: '2026-08-16',
+    desc: '① 首页待办支持「前瞻计划」：日期导航可往后翻（最多前瞻 30 天），未来日期的任务可提前编辑、增删改，自动拉取任务在未来视图隐藏，只显示手动计划的任务；添加/编辑弹窗会标注任务归属的日期；② 系统信息页新增「本次更新时间」（精确到秒），记录本机切换到当前版本的时刻，发布日期同时保留。' },
   {
     version: 'v49', date: '2026-08-16',
     desc: '数据防丢三重保险：① storage.js 新增 IndexedDB 本地双保险备份，localStorage 被浏览器清理时启动自动恢复；② 云同步改为「启动自动静默拉取 + 改动后 8 秒防抖自动上传 + 切后台/关闭前立即上传」，无需每天手动拉取；③ 系统信息页显示「数据保护状态」（本地条数 / 备份条数 / 当前访问地址），非 github.io 地址时提示重新安装桌面图标。' },
@@ -339,6 +350,7 @@ export function initSystemInfo() {
               <div style="font-size:13px;color:var(--text-muted)">代码版本（本次部署）</div>
               <div style="font-size:26px;font-weight:700;color:var(--primary)">${APP_VERSION}</div>
               <div style="font-size:12px;color:var(--text-muted)">发布日期：${APP_DATE}</div>
+              <div style="font-size:12px;color:var(--text-muted)" id="updateTimeLine">本次更新时间：读取中…</div>
             </div>
             <button class="btn btn-primary" id="checkUpdateBtn">🔄 检查更新</button>
             <button class="btn" id="clearCacheBtn" style="margin-left:8px">🧹 清除缓存并强制刷新</button>
@@ -365,6 +377,12 @@ export function initSystemInfo() {
       // —— 运行状态诊断：本机 SW 缓存版本 vs 代码版本 / 数据保护状态 ——
       const statusEl = container.querySelector('#runStatus');
       async function renderRunStatus() {
+        // 本次更新时间：本机切换到当前版本的精确时刻（controllerchange 时记录）
+        const utEl = container.querySelector('#updateTimeLine');
+        const ts = Number(localStorage.getItem('wb_app_updated_at') || '0');
+        if (utEl) {
+          utEl.textContent = '本次更新时间：' + (ts ? fmtDateTime(ts) + '（本机时间）' : '（尚未记录，下次更新到新版本时自动记录）');
+        }
         const lines = [];
         try {
           if ('caches' in window) {

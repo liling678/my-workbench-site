@@ -42,6 +42,20 @@ function shiftDateKey(key, delta) {
   return dateKey(d);
 }
 
+// 最多可前瞻的天数（用于限制「后一天」导航，避免无限往后翻）
+const MAX_FUTURE_DAYS = 30;
+function maxFutureKey() {
+  const d = new Date();
+  d.setDate(d.getDate() + MAX_FUTURE_DAYS);
+  return dateKey(d);
+}
+
+// 把 YYYY-MM-DD 格式化为「X月X日」
+function fmtDateShort(key) {
+  const d = new Date(key + 'T00:00:00');
+  return `${d.getMonth() + 1}月${d.getDate()}日`;
+}
+
 // 每日好句：按日期固定，同一天不变化
 function getDailyQuote() {
   const cached = Storage.get(QUOTE_KEY, null);
@@ -331,9 +345,14 @@ function renderTaskTabContent(tasks, cat) {
 export function initDashboard(container) {
   const quote = getDailyQuote();
   const greeting = getGreeting();
-  // 当前查看的日期：viewDateKey 非空则为历史日，否则今天
-  const viewKey = viewDateKey || todayKey();
-  const isHistory = !!viewDateKey && viewDateKey !== todayKey();
+  // 当前查看的日期：viewDateKey 非空则为非今日，否则今天
+  const todayK = todayKey();
+  const viewKey = viewDateKey || todayK;
+  const isToday = viewKey === todayK;
+  const isPast = !isToday && viewKey < todayK;    // 真正的过去：只读，不可编辑
+  const isFuture = !isToday && viewKey > todayK;  // 未来的前瞻计划：允许提前编辑
+  // 兼容旧语义：仅「过去的日期」视为历史（锁定编辑），未来日期放开编辑
+  const isHistory = isPast;
   const stats = getTaskStats(viewKey);
   const weights = getLast7DaysWeights();
   const allWeights = getWeights();
@@ -341,7 +360,8 @@ export function initDashboard(container) {
   const todayWeight = viewWeightRec ? viewWeightRec.weight : null;
   const todayCheckin = getTodayCheckinSummary();
   const tasks = getTasks(viewKey);
-  const autoTasks = getAutoTasks(viewKey);
+  // 未来日期是「前瞻计划」，自动拉取的任务（基于当天数据推断）没有意义，只显示手动计划的任务
+  const autoTasks = isFuture ? [] : getAutoTasks(viewKey);
 
   // 合并自动任务和手动任务
   const manualIds = new Set(tasks.map(t => t.id));
@@ -358,13 +378,17 @@ export function initDashboard(container) {
   const now = new Date();
   const viewDate = new Date(viewKey + 'T00:00:00');
   const dateStr = `${viewDate.getMonth() + 1}\u6708${viewDate.getDate()}\u65E5 \u00B7 \u5468${'\u65E5\u4E00\u4E8C\u4E09\u56DB\u4E94\u516D'[viewDate.getDay()]}`;
+  // 任务区标题：今天=「一些待办」；过去=当日计划（历史）；未来=当日计划（前瞻）
+  const taskTitle = isToday
+    ? '\u4E00\u4E9B\u5F85\u529E'
+    : (viewDate.getMonth() + 1) + '\u6708' + viewDate.getDate() + '\u65E5 \u8BA1\u5212' + (isFuture ? '\uff08\u524D\u77BB\uff09' : '\uff08\u5386\u53F2\uff09');
 
   container.innerHTML = `
     <div class="greeting-card">
       <div class="greeting-top">
         <div>
           <div class="greeting-name">${greeting}\uFF0C\u6817\u5706\u5706</div>
-          <div class="greeting-date">${dateStr} \u00B7 ${isHistory ? '\u5F53\u65E5' : '\u4ECA\u65E5'}\u6709 ${stats.total} \u9879\u4EFB\u52A1${isHistory ? ' \u00B7 \u5386\u53F2\u8BB0\u5F55' : ''}</div>
+          <div class="greeting-date">${dateStr} \u00B7 ${isToday ? '\u4ECA\u65E5' : isFuture ? '\u524D\u77BB\u8BA1\u5212' : '\u5F53\u65E5'}\u6709 ${stats.total} \u9879\u4EFB\u52A1${isPast ? ' \u00B7 \u5386\u53F2\uff08\u53EA\u8BFB\uff09' : ''}</div>
         </div>
         <div class="greeting-sync" id="dashSyncBtn" style="cursor:pointer">${loadCloudConfig() ? "\u5DF2\u914D\u7F6E" : "\u4E91\u540C\u6B65"}</div>
       </div>
@@ -421,11 +445,11 @@ export function initDashboard(container) {
     <div id="homeCheckinHost"></div>
 
     <div class="task-section-head">
-      <span class="task-section-title">${isHistory ? (viewDate.getMonth() + 1) + '\u6708' + viewDate.getDate() + '\u65E5 \u8BA1\u5212' : '\u4E00\u4E9B\u5F85\u529E'}</span>
+      <span class="task-section-title">${taskTitle}</span>
       <div class="date-nav">
         <button class="date-nav-btn" id="datePrev" title="\u524D\u4E00\u5929">\u2039</button>
-        <button class="date-nav-btn${isHistory ? '' : ' disabled'}" id="dateToday" ${isHistory ? '' : 'disabled'}>\u4ECA\u5929</button>
-        <button class="date-nav-btn" id="dateNext" title="\u540E\u4E00\u5929" ${viewKey >= todayKey() ? 'disabled' : ''}>\u203A</button>
+        <button class="date-nav-btn${isToday ? ' disabled' : ''}" id="dateToday" ${isToday ? 'disabled' : ''}>\u4ECA\u5929</button>
+        <button class="date-nav-btn" id="dateNext" title="\u540E\u4E00\u5929\uff08\u6700\u591a\u524D\u77BB${MAX_FUTURE_DAYS}\u5929\uff09" ${viewKey >= maxFutureKey() ? 'disabled' : ''}>\u203A</button>
       </div>
     </div>
 
@@ -531,7 +555,7 @@ export function initDashboard(container) {
   const dateNext = container.querySelector('#dateNext');
   const dateToday = container.querySelector('#dateToday');
   if (datePrev) datePrev.onclick = () => { viewDateKey = shiftDateKey(viewKey, -1); initDashboard(container); };
-  if (dateNext && !dateNext.disabled) dateNext.onclick = () => { if (viewKey < todayKey()) { viewDateKey = shiftDateKey(viewKey, 1); initDashboard(container); } };
+  if (dateNext && !dateNext.disabled) dateNext.onclick = () => { if (viewKey < maxFutureKey()) { viewDateKey = shiftDateKey(viewKey, 1); initDashboard(container); } };
   if (dateToday && !dateToday.disabled) dateToday.onclick = () => { viewDateKey = null; initDashboard(container); };
 }
 
@@ -620,12 +644,17 @@ function openCountdownManage(container) {
 
 function openAddTaskModal(container, category) {
   const catLabel = category === 'daily' ? '\u65E5\u5E38' : category === 'work' ? '\u5DE5\u4F5C' : '\u5B66\u4E60';
+  const dk = viewDateKey || todayKey();
+  const dateHint = dk === todayKey()
+    ? ''
+    : `<div class="field-hint" style="margin-bottom:10px;color:var(--text-muted);font-size:12px">\u8BE5\u4EFB\u52A1\u5C06\u6DFB\u52A0\u5230 <b>${escapeHtml(fmtDateShort(dk))}</b>\uff08\u524D\u77BB\u8BA1\u5212\uff09</div>`;
   openModal({
     title: `\u6DFB\u52A0${catLabel}\u4EFB\u52A1`,
     body: `
+      ${dateHint}
       <div class="field">
         <label class="field-label">\u4EFB\u52A1\u5185\u5BB9</label>
-        <textarea class="textarea" id="newTaskText" placeholder="\u4ECA\u5929\u8981\u505A\u4EC0\u4E48\uFF1F" autofocus></textarea>
+        <textarea class="textarea" id="newTaskText" placeholder="\u8FD9\u5929\u8981\u505A\u4EC0\u4E48\uFF1F" autofocus></textarea>
       </div>`,
     foot: `<button class="btn" id="taskCancel">\u53D6\u6D88</button><button class="btn btn-primary" id="taskSave">\u6DFB\u52A0</button>`
   });
@@ -633,9 +662,9 @@ function openAddTaskModal(container, category) {
   document.getElementById('taskSave').onclick = () => {
     const text = document.getElementById('newTaskText').value.trim();
     if (!text) { toast('\u8BF7\u8F93\u5165\u4EFB\u52A1\u5185\u5BB9'); return; }
-    const tasks = getTasks();
+    const tasks = getTasks(dk);
     tasks.push({ id: Storage.uid(), text, done: false, manual: true, category });
-    saveTasks(tasks);
+    saveTasks(tasks, dk);
     closeModal();
     toast('\u4EFB\u52A1\u5DF2\u6DFB\u52A0');
     activeTaskTab = category;
@@ -644,9 +673,14 @@ function openAddTaskModal(container, category) {
 }
 
 function openEditTaskModal(task, container) {
+  const dk = viewDateKey || todayKey();
+  const dateHint = dk === todayKey()
+    ? ''
+    : `<div class="field-hint" style="margin-bottom:10px;color:var(--text-muted);font-size:12px">\u7F16\u8F91\u7684\u662F <b>${escapeHtml(fmtDateShort(dk))}</b>\u7684\u4EFB\u52A1</div>`;
   openModal({
     title: '\u7F16\u8F91\u4EFB\u52A1',
     body: `
+      ${dateHint}
       <div class="field">
         <label class="field-label">\u4EFB\u52A1\u5185\u5BB9</label>
         <textarea class="textarea" id="editTaskText">${escapeHtml(task.text)}</textarea>
@@ -657,9 +691,9 @@ function openEditTaskModal(task, container) {
   document.getElementById('editSave').onclick = () => {
     const text = document.getElementById('editTaskText').value.trim();
     if (!text) { toast('\u8BF7\u8F93\u5165\u4EFB\u52A1\u5185\u5BB9'); return; }
-    const tasks = getTasks();
+    const tasks = getTasks(dk);
     const t = tasks.find(x => x.id === task.id);
-    if (t) { t.text = text; saveTasks(tasks); }
+    if (t) { t.text = text; saveTasks(tasks, dk); }
     closeModal();
     toast('\u5DF2\u66F4\u65B0');
     initDashboard(container);
