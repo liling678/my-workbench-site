@@ -1,10 +1,11 @@
 // system-info.js — 系统信息：版本号、更新日志、运行状态诊断
 import { registerStandalone } from '../../registry.js';
 import { toast, escapeHtml } from '../../ui.js';
+import { backupExport } from '../../storage.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v47';
-export const APP_DATE = '2026-08-10';
+export const APP_VERSION = 'v49';
+export const APP_DATE = '2026-08-16';
 
 // 清理残留的旧版本缓存：只保留 wb-app-<version>，删除其它 wb-app-* 键，
 // 避免多个版本缓存并存导致「本机缓存与代码版本不一致」的误报。
@@ -19,6 +20,12 @@ async function cleanupStaleCaches(version) {
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v49', date: '2026-08-16',
+    desc: '数据防丢三重保险：① storage.js 新增 IndexedDB 本地双保险备份，localStorage 被浏览器清理时启动自动恢复；② 云同步改为「启动自动静默拉取 + 改动后 8 秒防抖自动上传 + 切后台/关闭前立即上传」，无需每天手动拉取；③ 系统信息页显示「数据保护状态」（本地条数 / 备份条数 / 当前访问地址），非 github.io 地址时提示重新安装桌面图标。' },
+  {
+    version: 'v48', date: '2026-08-10',
+    desc: '云同步防呆：设置面板新增常驻「本机同步身份」卡片（仓库 + 同步码），明确提示另一台设备必须完全一致，否则会读写不同云端文件、互相看不到数据。这是「手机传了电脑没显示」最常见的根因。' },
   {
     version: 'v47', date: '2026-08-10',
     desc: '云同步诊断增强：①「测试连接」现在会读取同步文件并报告「云端有几条数据 / 最后更新时间」，方便判断手机端是否真上传成功；② 设置面板新增「最近操作（含失败记录）」列表，上传/拉取失败也会留下痕迹；③ 上传/拉取失败时同样刷新日志，避免旧时间误导。' },
@@ -355,7 +362,7 @@ export function initSystemInfo() {
         </div>
       `;
 
-      // —— 运行状态诊断：本机 SW 缓存版本 vs 代码版本 ——
+      // —— 运行状态诊断：本机 SW 缓存版本 vs 代码版本 / 数据保护状态 ——
       const statusEl = container.querySelector('#runStatus');
       async function renderRunStatus() {
         const lines = [];
@@ -383,7 +390,17 @@ export function initSystemInfo() {
               lines.push('离线支持：未启用（可能是首次访问或非安全上下文）');
             }
           }
-          lines.push(`访问地址：${escapeHtml(location.origin + location.pathname)}`);
+          // 数据保护状态
+          const localCount = (() => { let n = 0; for (let i = 0; i < localStorage.length; i++) if ((localStorage.key(i) || '').startsWith('wb_')) n++; return n; })();
+          const backup = await backupExport();
+          const backupCount = Object.keys(backup).length;
+          lines.push(`数据保护：本地 ${localCount} 条 / IndexedDB 备份 ${backupCount} 条 ${backupCount > 0 ? '✅' : '⚠️'}`);
+          const origin = location.origin;
+          const fixedOrigin = 'https://liling678.github.io';
+          lines.push(`访问地址：${escapeHtml(origin + location.pathname)}`);
+          if (!origin.includes(fixedOrigin)) {
+            lines.push(`⚠️ 当前不是固定地址 ${fixedOrigin}/my-workbench-site/，建议卸载旧桌面图标后，用浏览器打开该固定地址再「安装到桌面」，否则地址变化会导致数据丢失。`);
+          }
         } catch (e) {
           lines.push('状态读取失败：' + escapeHtml(e.message || String(e)));
         }

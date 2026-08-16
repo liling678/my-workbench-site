@@ -113,6 +113,9 @@ function normalizeProxy(raw) {
 }
 
 let ready = false;
+let isPulling = false;           // 拉取中标记，防止拉取写回本地时触发自动上传
+let autoPushTimer = null;        // 防抖自动上传定时器
+let autoPushPending = false;     // 是否有待上传的改动
 
 export function loadCloudConfig() { return Storage.get(CONFIG_KEY, null); }
 function saveCloudConfig(c) { Storage.set(CONFIG_KEY, c); }
@@ -148,13 +151,71 @@ export function isCloudEnabled() {
   return !!(c && c.pat && c.owner && c.repo && c.syncCode);
 }
 
-// 只记录本地改动时间，不触发上传；上传仍必须由用户手动点击。
+// 记录本地改动时间，并在用户停止操作后自动防抖上传到云端。
+// 拉取过程中写回本地时不触发自动上传，避免循环。
 export function registerSyncHook() {
   onAfterSet((key) => {
     if (key === CONFIG_KEY || key === TS_KEY) return;
     const ts = loadTs();
     ts[key] = Date.now();
     saveTs(ts);
+    scheduleAutoPush();
+  });
+}
+
+// 防抖自动上传：改动后 8 秒内无新改动则静默上传，避免每次操作都发请求。
+function scheduleAutoPush() {
+  if (isPulling) return;
+  if (!ready) return;
+  autoPushPending = true;
+  if (autoPushTimer) clearTimeout(autoPushTimer);
+  autoPushTimer = setTimeout(() => {
+    autoPushTimer = null;
+    autoPushPending = false;
+    pushNow(false).catch(() => {});
+  }, 8000);
+}
+
+// 页面隐藏/关闭前尝试立即上传（尽力而为）
+function flushAutoPush() {
+  if (autoPushTimer) { clearTimeout(autoPushTimer); autoPushTimer = null; }
+  if (autoPushPending && ready) {
+    autoPushPending = false;
+    pushNow(false).catch(() => {});
+  }
+}
+
+// 启动时自动拉取：如果云端比本地新，静默合并到本地并刷新当前模块。
+export async function autoPull(showToast = false) {
+  if (!ready) return 0;
+  try {
+    const result = await pullAll();
+    if (result.updated > 0) {
+      try { window.dispatchEvent(new Event('wb-data-synced')); } catch (e) {}
+    }
+    return result.updated;
+  } catch (e) {
+    console.error('[cloud-sync] autoPull failed', e);
+    return 0;
+  }
+}
+
+if (typeof window !== 'undefined') {
+  // 切后台 / 关闭前立即上传
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushAutoPush();
+  });
+  window.addEventListener('pagehide', flushAutoPush);
+  // beforeunload 用同步方式发送 Beacon（fetch keepalive），尽量减少关闭时丢数据
+  window.addEventListener('beforeunload', () => {
+    if (autoPushPending && ready) {
+      try {
+        const data = JSON.stringify({ ts: Date.now(), data: Storage.exportAll() });
+        // 注意：GitHub API 不支持简单 Beacon，这里只能尽力发送 keepalive fetch
+        // 真正可靠的上传依赖 visibilitychange/pagehide 的异步 pushNow
+        if (navigator.sendBeacon) navigator.sendBeacon('', new Blob([data], { type: 'application/json' }));
+      } catch (e) {}
+    }
   });
 }
 
@@ -227,6 +288,10 @@ export async function initCloud() {
     if (!res.ok) { toast('连接 GitHub 失败：' + res.status); return false; }
     ready = true;
     setStatus('idle');
+    // 启动成功后：先等 IndexedDB 恢复完成，再静默拉取云端最新数据
+    setTimeout(() => {
+      autoPull(false);
+    }, 1500);
     return true;
   } catch (e) {
     console.error('initCloud failed', e);
@@ -409,6 +474,8 @@ async function writeFileGit(contentB64) {
 // 返回 { updated, notFound, remoteKeys, sha, lastCommit }
 export async function pullAll(opts = {}) {
   if (!ready) return { updated: 0, notFound: false };
+  isPulling = true;
+  try {
   const remote = await readRemote();
   if (!remote || remote.notFound) return { updated: 0, notFound: true };
   console.info('[cloud-sync] 读取远端文件', { sha: remote.sha, keys: Object.keys(remote.data).length, lastCommit: remote.lastCommit });
@@ -437,6 +504,9 @@ export async function pullAll(opts = {}) {
   }
   saveTs(localTs);
   return { updated, notFound: false, remoteKeys: Object.keys(remote.data).length, sha: remote.sha, lastCommit: remote.lastCommit, failedWrites };
+  } finally {
+    isPulling = false;
+  }
 }
 
 // 把 ISO 时间转成「MM-DD HH:mm」本地显示（给云端 commit 时间用）
@@ -562,7 +632,15 @@ function updateSyncLogView() {
         return `<div class="sync-log-row" style="font-size:12px"><span class="sync-log-dot ${h.status === 'ok' ? 'up' : 'err'}"></span>${status} ${icon} ${fmtSyncTime(h.time)} ${count}${h.message ? ' · ' + escapeHtml(h.message) : ''}</div>`;
       }).join('')}
     </div>`;
+  const idCfg = loadCloudConfig() || {};
+  const identity = `
+    <div class="sync-identity">
+      <div class="sync-identity-title">🔑 本机同步身份（另一台设备必须<b>完全一致</b>，否则会读写不同的云端文件、互相看不到数据）</div>
+      <div class="sync-identity-row">仓库：<b>${escapeHtml((idCfg.owner || '?') + '/' + (idCfg.repo || '?'))}</b></div>
+      <div class="sync-identity-row">同步码：<b>${escapeHtml(idCfg.syncCode || '(未设置)')}</b></div>
+    </div>`;
   el.innerHTML = `
+    ${identity}
     <div class="sync-log-row"><span class="sync-log-dot up"></span>上次上传：<b>${pushTxt}</b></div>
     <div class="sync-log-row"><span class="sync-log-dot down"></span>上次拉取：<b>${pullTxt}</b></div>
     ${histHtml}`;

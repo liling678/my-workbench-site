@@ -218,6 +218,10 @@ input, textarea, select { font-family: inherit; }
 .sync-log-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 .sync-log-dot.up { background: var(--primary); }
 .sync-log-dot.down { background: #2b8a6b; }
+.sync-identity { background: rgba(15,110,86,0.06); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+.sync-identity-title { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; line-height: 1.6; }
+.sync-identity-row { font-size: 13px; line-height: 1.9; }
+.sync-identity-row b { color: var(--primary); word-break: break-all; }
 .sync-log-dot.err { background: #dc3545; }
 .btn-xs { padding: 3px 10px; font-size: 12px; }
 .sql-block { background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 10px 12px; font-size: 12px; line-height: 1.5; overflow-x: auto; white-space: pre; margin: 6px 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
