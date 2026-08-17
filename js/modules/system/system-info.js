@@ -4,8 +4,8 @@ import { toast, escapeHtml } from '../../ui.js';
 import { backupExport } from '../../storage.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v50';
-export const APP_DATE = '2026-08-16';
+export const APP_VERSION = 'v51';
+export const APP_DATE = '2026-08-17';
 
 // 把时间戳格式化为「YYYY-MM-DD HH:mm:ss」（带具体时间）
 function fmtDateTime(ts) {
@@ -28,6 +28,9 @@ async function cleanupStaleCaches(version) {
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v51', date: '2026-08-17',
+    desc: '首页版块顺序调整：将「一些待办」（任务列表）整体上移到「每日打卡表」之上，打卡表顺延到待办下方，符合先看今日计划再打卡的习惯。' },
   {
     version: 'v50', date: '2026-08-16',
     desc: '① 首页待办支持「前瞻计划」：日期导航可往后翻（最多前瞻 30 天），未来日期的任务可提前编辑、增删改，自动拉取任务在未来视图隐藏，只显示手动计划的任务；添加/编辑弹窗会标注任务归属的日期；② 系统信息页新增「本次更新时间」（精确到秒），记录本机切换到当前版本的时刻，发布日期同时保留。' },

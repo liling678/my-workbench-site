@@ -442,8 +442,6 @@ export function initDashboard(container) {
       </div>
     </div>
 
-    <div id="homeCheckinHost"></div>
-
     <div class="task-section-head">
       <span class="task-section-title">${taskTitle}</span>
       <div class="date-nav">
@@ -461,6 +459,8 @@ export function initDashboard(container) {
     <div id="taskTabContent">
       ${renderTaskTabContent(mergedTasks, activeTaskTab)}
     </div>
+
+    <div id="homeCheckinHost"></div>
   `;
 
   // 体重修改按钮 → 跳转 body-care
