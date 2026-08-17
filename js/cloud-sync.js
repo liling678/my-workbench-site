@@ -469,6 +469,40 @@ async function writeFileGit(contentB64) {
   if (!updRes.ok) throw new Error('更新分支引用失败：' + updRes.status);
 }
 
+// 判断是否为纯对象（不含数组/null）
+function isPlainObject(v) {
+  return v !== null && typeof v === 'object' && !Array.isArray(v);
+}
+
+// 智能合并两个值：避免「本地和云端不一致时直接互覆盖」导致丢数据。
+// - 都是纯对象：逐键递归（兼容 daily_tasks 这种 {日期: [任务]} 的嵌套结构）
+// - 都是「带 id 的对象数组」：按 id 取并集（本地新增项不会被云端覆盖掉）
+// - 其它情况：以远端为准（保持原行为）
+function deepMergeValues(localVal, remoteVal) {
+  if (isPlainObject(localVal) && isPlainObject(remoteVal)) {
+    const out = Object.assign({}, localVal);
+    for (const k of Object.keys(remoteVal)) {
+      if (Object.prototype.hasOwnProperty.call(out, k)) {
+        out[k] = deepMergeValues(out[k], remoteVal[k]);
+      } else {
+        out[k] = remoteVal[k];
+      }
+    }
+    return out;
+  }
+  const arrOk = Array.isArray(localVal) && Array.isArray(remoteVal) &&
+    localVal.length > 0 && remoteVal.length > 0 &&
+    localVal.every(x => x && x.id) && remoteVal.every(x => x && x.id);
+  if (arrOk) {
+    const seen = new Map();
+    for (const x of remoteVal) seen.set(x.id, x);
+    const merged = remoteVal.slice();
+    for (const x of localVal) if (!seen.has(x.id)) merged.push(x);
+    return merged;
+  }
+  return remoteVal;
+}
+
 // 拉取云端数据合并到本地（跨设备时钟不一致时用「值差异」兜底，避免漏拉）
 // opts.force=true：以云端为准，本地只保留云端有的键（清除本地独有、云端没有的键）
 // 返回 { updated, notFound, remoteKeys, sha, lastCommit }
@@ -494,9 +528,16 @@ export async function pullAll(opts = {}) {
     // 不能只比时间戳：两台设备系统时钟可能不一致（一台快一台慢），纯时间戳比较会漏拉。
     // 改为：本地缺失 或 远端值不同 → 一律拉取（以值差异兜底，确保对端的新改动能下来）。
     const localVal = Storage.get(key, undefined);
-    const sameValue = localVal !== undefined && JSON.stringify(localVal) === JSON.stringify(value);
-    if (localVal === undefined || !sameValue) {
+    if (localVal === undefined) {
+      // 本地缺失：直接拉取
       const ok = Storage.set(key, value);   // 可能因本地存储配额不足而失败（多为照片等大体积数据）
+      if (!ok) failedWrites.push(key);
+      localTs[key] = remote.ts[key] || Date.now();
+      updated++;
+    } else if (JSON.stringify(localVal) !== JSON.stringify(value)) {
+      // 本地和云端都有且不一致：智能合并（按 id 并集 / 对象逐键递归），避免互相覆盖丢数据
+      const merged = deepMergeValues(localVal, value);
+      const ok = Storage.set(key, merged);
       if (!ok) failedWrites.push(key);
       localTs[key] = remote.ts[key] || Date.now();
       updated++;
@@ -546,7 +587,26 @@ export async function pushNow(showToast = true, opts = {}) {
     log.lastPushCount = pushed;
     saveSyncLog(log);
     addSyncHistory({ dir: 'up', status: 'ok', count: pushed, message: pushed > 0 ? `已上传 ${pushed} 条` : '没有新数据需要上传' });
-    if (showToast) toast((pushed > 0 ? `已上传 ${pushed} 条到云端` : '没有新数据需要上传') + diagSuffix());
+    if (showToast) {
+      if (pushed > 0) {
+        toast(`已上传 ${pushed} 条到云端` + diagSuffix());
+      } else {
+        // 云端已一致：核对远端，明确告诉用户「数据其实已在云端」，并确认待办在不在列
+        let info = '';
+        try {
+          const remote = await readRemote();
+          if (remote && !remote.notFound && remote.data) {
+            const keys = Object.keys(remote.data);
+            const t = remote.data.daily_tasks;
+            const taskN = t ? Object.values(t).reduce((s, a) => s + (Array.isArray(a) ? a.length : 0), 0) : 0;
+            info = `云端已是最新（共 ${keys.length} 类数据，含待办 ${taskN} 条，最后更新 ${fmtDateTime(remote.lastCommit)}）—— 数据已在云端，去另一台设备点「⬇ 从云端拉取」即可。`;
+          } else {
+            info = '云端暂无同步文件，但本机也无新改动需要上传。';
+          }
+        } catch (e) { info = '（无法核对云端，可能当前网络受限）'; }
+        toast('没有新数据需要上传。' + info);
+      }
+    }
     updateSyncLogView();
     return pushed;
   } catch (e) {
