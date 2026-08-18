@@ -4,8 +4,8 @@ import { toast, escapeHtml } from '../../ui.js';
 import { backupExport } from '../../storage.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v52';
-export const APP_DATE = '2026-08-17';
+export const APP_VERSION = 'v53';
+export const APP_DATE = '2026-08-18';
 
 // 把时间戳格式化为「YYYY-MM-DD HH:mm:ss」（带具体时间）
 function fmtDateTime(ts) {
@@ -28,6 +28,9 @@ async function cleanupStaleCaches(version) {
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v53', date: '2026-08-18',
+    desc: '修复「已保存设置却每次重启仍提示请先点保存设置」：把 ready 标志与「启动网络握手」解耦，配置完整（localStorage 已存 Token/仓库/同步码）即可允许上传/拉取，不再因重启时 GitHub 连不上（没开 VPN / 网络被拦）就把按钮锁死。真正连不上时由点击同步时的请求报错，不再逼用户重复点保存。' },
   {
     version: 'v52', date: '2026-08-17',
     desc: '修复云同步「丢数据 + 上传无数据」问题：① 拉取合并改为智能合并（按 id 并集 / 对象逐键递归），本地与云端同一份数据不一致时不再直接互相覆盖，手机离线新增的待办不会在自动拉取时被云端旧版本冲掉；② 点击「上传到云端」显示「没有新数据」时，主动核对云端并明确告知「云端已是最新（共 N 类数据、含待办 X 条、最后更新时间）」，避免误以为没同步。所有用户数据（待办/打卡/体重/倒计时/文章库/图片库/灵感库/软考考公计划等）均已在同步范围，仅云配置与同步日志不外传。' },

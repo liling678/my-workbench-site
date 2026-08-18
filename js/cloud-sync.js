@@ -276,27 +276,38 @@ async function ensureSyncBranch() {
   } catch (e) { console.warn('ensureSyncBranch failed', e); }
 }
 
-// 初始化：仅验证 Token + 仓库可达，不自动拉取数据。
-// 数据同步严格由用户手动点击「上传到云端」或「从云端拉取」触发。
+// 初始化：配置完整即可启用同步，不再把「上传/拉取」按钮锁死在「启动时网络握手成功」上。
+// 之前 ready 仅在启动连上 GitHub 验证仓库后才置 true，一旦重启时 GitHub 连不上（没开 VPN / 网络被拦），
+// ready 会被置回 false，于是配置明明已保存、按钮却仍提示「请先点保存设置」，逼用户再点一次保存。
+// 现在：ready 只代表「配置已完整」，真正的网络错误交给点击同步时的请求去报错。
 export async function initCloud() {
-  if (!isCloudEnabled()) return false;
+  if (!isCloudEnabled()) { ready = false; return false; }
+  // 配置已保存 → 允许尝试同步（关键修复：不再因启动网络握手失败而把 ready 置否）
+  ready = true;
   try {
     const c = loadCloudConfig();
     const res = await ghFetch(`https://api.github.com/repos/${c.owner}/${c.repo}`, { headers: ghHeaders() });
-    if (res.status === 401) { toast('GitHub Token 无效或权限不足（需勾 repo）'); return false; }
-    if (res.status === 404) { toast('仓库不存在，检查 Owner / Repository'); return false; }
-    if (!res.ok) { toast('连接 GitHub 失败：' + res.status); return false; }
-    ready = true;
-    setStatus('idle');
-    // 启动成功后：先等 IndexedDB 恢复完成，再静默拉取云端最新数据
-    setTimeout(() => {
-      autoPull(false);
-    }, 1500);
+    if (res.status === 401) {
+      // Token 无效：明确提示，但 ready 仍保持 true（之后点同步也会报 401，逻辑一致）
+      toast('GitHub Token 无效或权限不足（需勾 repo），请重新保存设置');
+      setStatus('error');
+    } else if (res.status === 404) {
+      toast('仓库不存在，检查 Owner / Repository');
+      setStatus('error');
+    } else if (res.ok) {
+      setStatus('idle');
+      // 启动成功后：先等 IndexedDB 恢复完成，再静默拉取云端最新数据
+      setTimeout(() => { autoPull(false); }, 1500);
+    } else {
+      // 其它 HTTP 错误：保持 ready=true，交由手动同步时反馈，不在此处打断用户
+      console.warn('[cloud-sync] 启动连接检查返回', res.status, '，ready 仍保持 true');
+    }
     return true;
   } catch (e) {
-    console.error('initCloud failed', e);
-    ready = false;
-    return false;
+    // 网络被拦截（没开 VPN 等常见情况）：仅记录，不打扰用户；
+    // ready 保持 true，点击「上传/拉取」时会真正尝试并给出网络错误提示。
+    console.warn('[cloud-sync] 启动网络连接检查失败（配置已保存，ready 仍为 true，点击同步时会真实报错）：', e.message);
+    return true;
   }
 }
 
