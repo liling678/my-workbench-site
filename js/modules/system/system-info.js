@@ -4,7 +4,7 @@ import { toast, escapeHtml } from '../../ui.js';
 import { backupExport } from '../../storage.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v55';
+export const APP_VERSION = 'v56';
 export const APP_DATE = '2026-08-18';
 
 // 把时间戳格式化为「YYYY-MM-DD HH:mm:ss」（带具体时间）
@@ -30,6 +30,7 @@ async function cleanupStaleCaches(version) {
 // 更新日志每条会优先显示这里的具体时间；map 里没有的旧版本（v36 及更早，当时部署路径不同）则只显示日期。
 // 每次部署新版本后，记得在此补上该版本的真实时间。
 const VERSION_TIMES = {
+  'v56': '00:00:00', // 部署后回填真实 commit 时间
   'v55': '11:38:22',
   'v54': '11:07:44',
   'v53': '10:30:19',
@@ -53,6 +54,9 @@ const VERSION_TIMES = {
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v56', date: '2026-08-18',
+    desc: '后端部署硬化（对应你「全功能模式 + 磁盘/隔离约束」要求）：①图片/附件不再落服务器本地盘，改走阿里云 OSS，数据库(server-data.json)只存资源 URL 字符串；②日志按天滚动仅留 7 天、过期自动 gzip 删除；③数据库备份直接上传 OSS、本机不堆积；④进程内存硬上限 512MB(--max-old-space-size)；⑤仅暴露 /api/health|/api/data|/api/upload，Bearer 令牌 + 可选 IP 白名单 + 限流 + robots noindex 防爬；⑥独立端口 3217，不碰服务器其他项目。前端在「自有服务器模式」下 storeImage 自动调 /api/upload 把图片传到 OSS 并返回 URL。' },
   {
     version: 'v55', date: '2026-08-18',
     desc: '新增「自有服务器同步模式」：在阿里云等自己的服务器运行零依赖的 server.js（同时托管前端 + 提供 /api/data 数据接口），工作台即可多设备免同步、免 VPN、免 GitHub。设置里可选「GitHub 模式 / 自有服务器模式」；服务器模式下启动自动拉取、改动自动上传，多设备填相同地址+令牌即共享同一份数据。另：Service Worker 仅在 https/localhost 下注册（避免以 http://IP 部署时被浏览器拒绝而报错）。' },

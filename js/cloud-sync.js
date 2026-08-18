@@ -1008,7 +1008,30 @@ export function openSyncSettings() {
 // 因此 storeImage 原样返回、cloudUrl 透传、无需图片 Hydrator。
 
 export async function storeImage(src) {
-  return src; // 图片随数据 JSON 同步，不上传单独文件
+  const cfg = loadCloudConfig() || {};
+  // 自有服务器模式：图片上传到 OSS，数据库只存返回的公网 URL 字符串（服务器不落盘）
+  if (cfg.syncMode === 'server' && cfg.serverUrl && cfg.serverToken) {
+    // 已是 URL（如 OSS 链接）则直接复用，避免重复上传
+    if (typeof src === 'string' && (src.startsWith('http://') || src.startsWith('https://'))) return src;
+    // 仅 data: 图片才需要上传；其它（如外链）原样返回
+    if (typeof src === 'string' && src.startsWith('data:')) {
+      try {
+        const res = await serverFetch(serverBase() + '/api/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dataUrl: src })
+        });
+        if (res.ok) {
+          const j = await res.json();
+          if (j && j.url) return j.url;
+        }
+        console.warn('[storeImage] OSS 上传失败，回退为原始数据', res && res.status);
+      } catch (e) {
+        console.warn('[storeImage] OSS 上传异常:', e.message);
+      }
+    }
+  }
+  return src; // GitHub 模式或失败回退：图片随数据 JSON 同步
 }
 
 export async function cloudUrl(ref) {
