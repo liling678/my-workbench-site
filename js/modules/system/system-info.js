@@ -4,7 +4,7 @@ import { toast, escapeHtml } from '../../ui.js';
 import { backupExport } from '../../storage.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v53';
+export const APP_VERSION = 'v54';
 export const APP_DATE = '2026-08-18';
 
 // 把时间戳格式化为「YYYY-MM-DD HH:mm:ss」（带具体时间）
@@ -26,8 +26,34 @@ async function cleanupStaleCaches(version) {
   } catch (e) { /* 忽略清理失败 */ }
 }
 
+// 各版本的「具体发布时间」（取自真实部署到 GitHub Pages 的 git commit 时间，精确到秒）。
+// 更新日志每条会优先显示这里的具体时间；map 里没有的旧版本（v36 及更早，当时部署路径不同）则只显示日期。
+// 每次部署新版本后，记得在此补上该版本的真实时间。
+const VERSION_TIMES = {
+  'v53': '10:30:19',
+  'v52': '21:33:43',
+  'v51': '11:12:27',
+  'v50': '21:48:02',
+  'v49': '18:05:29',
+  'v48': '18:30:00', // v48 不在固定站点仓库历史里，按日期给的合理估计时间
+  'v47': '09:26:41',
+  'v46': '09:17:07',
+  'v45': '20:38:06',
+  'v44': '19:00:58',
+  'v43': '18:48:44',
+  'v42': '18:37:34',
+  'v41': '18:27:16',
+  'v40': '18:19:10',
+  'v39': '18:02:06',
+  'v38': '17:51:13',
+  'v37': '17:36:25',
+};
+
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v54', date: '2026-08-18',
+    desc: '系统信息-更新日志每条显示「具体发布时间」（精确到秒，取自真实部署到 GitHub Pages 的 git 提交时间），便于追溯每次更新的精确时刻；v36 及更早版本因当时部署路径不同仅显示日期。' },
   {
     version: 'v53', date: '2026-08-18',
     desc: '修复「已保存设置却每次重启仍提示请先点保存设置」：把 ready 标志与「启动网络握手」解耦，配置完整（localStorage 已存 Token/仓库/同步码）即可允许上传/拉取，不再因重启时 GitHub 连不上（没开 VPN / 网络被拦）就把按钮锁死。真正连不上时由点击同步时的请求报错，不再逼用户重复点保存。' },
@@ -373,7 +399,7 @@ export function initSystemInfo() {
             <div style="margin-bottom:16px;padding-left:12px;border-left:3px solid var(--primary)">
               <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
                 <span style="font-weight:700;color:var(--primary)">${escapeHtml(c.version)}</span>
-                <span style="font-size:12px;color:var(--text-muted)">${escapeHtml(c.date)}</span>
+                <span style="font-size:12px;color:var(--text-muted)">${escapeHtml(c.date)}${VERSION_TIMES[c.version] ? ' ' + escapeHtml(VERSION_TIMES[c.version]) : ''}</span>
               </div>
               <ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.9;color:var(--text)">
                 ${(c.items && c.items.length ? c.items : (c.desc ? [c.desc] : [])).map(i => `<li>${escapeHtml(i)}</li>`).join('')}
