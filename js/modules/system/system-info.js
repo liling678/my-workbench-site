@@ -4,7 +4,7 @@ import { toast, escapeHtml } from '../../ui.js';
 import { backupExport } from '../../storage.js';
 
 // ⚠️ 每次部署前更新这里：APP_VERSION 与 sw.js 的 CACHE 版本号保持一致
-export const APP_VERSION = 'v54';
+export const APP_VERSION = 'v55';
 export const APP_DATE = '2026-08-18';
 
 // 把时间戳格式化为「YYYY-MM-DD HH:mm:ss」（带具体时间）
@@ -30,6 +30,7 @@ async function cleanupStaleCaches(version) {
 // 更新日志每条会优先显示这里的具体时间；map 里没有的旧版本（v36 及更早，当时部署路径不同）则只显示日期。
 // 每次部署新版本后，记得在此补上该版本的真实时间。
 const VERSION_TIMES = {
+  'v55': '00:00:00',
   'v54': '11:07:44',
   'v53': '10:30:19',
   'v52': '21:33:43',
@@ -52,6 +53,9 @@ const VERSION_TIMES = {
 
 // 更新日志（新的放最上面）
 const CHANGELOG = [
+  {
+    version: 'v55', date: '2026-08-18',
+    desc: '新增「自有服务器同步模式」：在阿里云等自己的服务器运行零依赖的 server.js（同时托管前端 + 提供 /api/data 数据接口），工作台即可多设备免同步、免 VPN、免 GitHub。设置里可选「GitHub 模式 / 自有服务器模式」；服务器模式下启动自动拉取、改动自动上传，多设备填相同地址+令牌即共享同一份数据。另：Service Worker 仅在 https/localhost 下注册（避免以 http://IP 部署时被浏览器拒绝而报错）。' },
   {
     version: 'v54', date: '2026-08-18',
     desc: '系统信息-更新日志每条显示「具体发布时间」（精确到秒，取自真实部署到 GitHub Pages 的 git 提交时间），便于追溯每次更新的精确时刻；v36 及更早版本因当时部署路径不同仅显示日期。' },

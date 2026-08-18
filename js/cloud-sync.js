@@ -148,7 +148,9 @@ export function fmtSyncTime(ts) {
 
 export function isCloudEnabled() {
   const c = loadCloudConfig();
-  return !!(c && c.pat && c.owner && c.repo && c.syncCode);
+  if (!c) return false;
+  if (c.syncMode === 'server') return !!(c.serverUrl && c.serverToken);
+  return !!(c.pat && c.owner && c.repo && c.syncCode);
 }
 
 // 记录本地改动时间，并在用户停止操作后自动防抖上传到云端。
@@ -281,6 +283,16 @@ async function ensureSyncBranch() {
 // ready 会被置回 false，于是配置明明已保存、按钮却仍提示「请先点保存设置」，逼用户再点一次保存。
 // 现在：ready 只代表「配置已完整」，真正的网络错误交给点击同步时的请求去报错。
 export async function initCloud() {
+  const cfg = loadCloudConfig();
+  if (!cfg) { ready = false; return false; }
+  // ---- 自有服务器模式：配置齐全即启用，启动自动拉取（服务器国内稳定可达） ----
+  if (cfg.syncMode === 'server') {
+    if (!cfg.serverUrl || !cfg.serverToken) { ready = false; return false; }
+    ready = true;
+    setTimeout(() => { autoPull(false); }, 1500);
+    return true;
+  }
+  // ===== 以下为 GitHub 模式 =====
   if (!isCloudEnabled()) { ready = false; return false; }
   // 配置已保存 → 允许尝试同步（关键修复：不再因启动网络握手失败而把 ready 置否）
   ready = true;
@@ -334,6 +346,8 @@ async function fetchCommitDate() {
 //   { notFound: true }            —— 文件/分支不存在
 //   { sha, ts, data, raw, lastCommit } —— 正常
 async function readRemote() {
+  const cfg = loadCloudConfig();
+  if (cfg && cfg.syncMode === 'server') return await readRemoteServer();
   try {
     return await readRemoteGit();
   } catch (e) {
@@ -394,6 +408,8 @@ async function readRemoteContents() {
 // 彻底规避 Contents API 的 1MB 限制，照片等大体积 base64 数据也能同步。
 // opts.force=true：以本地为准，云端只保留本地有的键（清除云端独有、本地已删的键）
 async function writeRemote(opts = {}) {
+  const cfg = loadCloudConfig();
+  if (cfg && cfg.syncMode === 'server') return await writeRemoteServer(opts);
   await ensureSyncBranch();
   const local = Storage.exportAll();
   const localTs = loadTs();
@@ -575,6 +591,9 @@ function fmtDateTime(iso) {
 // 同时明确告知「已同步全部模块数据」，让用户确认打卡/体重/每日计划/爆款选题等都在同步范围
 function diagSuffix(result) {
   const cfg = loadCloudConfig() || {};
+  if (cfg.syncMode === 'server') {
+    return `\n服务器=${cfg.serverUrl || '?'} · 多设备数据已自动合并到同一份`;
+  }
   const lc = result && result.lastCommit ? fmtDateTime(result.lastCommit) : '未知';
   const localData = Storage.exportAll();
   const localCount = Object.keys(localData).filter(k => k !== CONFIG_KEY && k !== TS_KEY && k !== SYNC_LOG_KEY).length;
@@ -600,7 +619,9 @@ export async function pushNow(showToast = true, opts = {}) {
     addSyncHistory({ dir: 'up', status: 'ok', count: pushed, message: pushed > 0 ? `已上传 ${pushed} 条` : '没有新数据需要上传' });
     if (showToast) {
       if (pushed > 0) {
-        toast(`已上传 ${pushed} 条到云端` + diagSuffix());
+        const cfg = loadCloudConfig() || {};
+        if (cfg.syncMode === 'server') toast(`已同步 ${pushed} 条到服务器（自动合并多设备数据）` + diagSuffix());
+        else toast(`已上传 ${pushed} 条到云端` + diagSuffix());
       } else {
         // 云端已一致：核对远端，明确告诉用户「数据其实已在云端」，并确认待办在不在列
         let info = '';
@@ -615,7 +636,9 @@ export async function pushNow(showToast = true, opts = {}) {
             info = '云端暂无同步文件，但本机也无新改动需要上传。';
           }
         } catch (e) { info = '（无法核对云端，可能当前网络受限）'; }
-        toast('没有新数据需要上传。' + info);
+        const cfg0 = loadCloudConfig() || {};
+        if (cfg0.syncMode === 'server') toast('当前数据已是最新（已同步到服务器，其它设备打开即自动拉取）');
+        else toast('没有新数据需要上传。' + info);
       }
     }
     updateSyncLogView();
@@ -652,13 +675,17 @@ export async function pullNow(showToast = true, opts = {}) {
         const cfg = loadCloudConfig() || {};
         toast(`云端没有找到同步文件（404）。\n请确认手机端与电脑端的「仓库=${cfg.repo || '?'} / 同步码=${cfg.syncCode || '?'}」完全一致，且电脑端已成功上传到同一处`);
       } else if (result.updated > 0) {
-        let msg = (opts.force ? `已强制覆盖拉取 ${result.updated} 条（以云端为准）` : `已从云端拉取 ${result.updated} 条`) + diagSuffix(result);
+        const cfg = loadCloudConfig() || {};
+        const srcWord = cfg.syncMode === 'server' ? '服务器' : '云端';
+        let msg = (opts.force ? `已强制覆盖拉取 ${result.updated} 条（以${srcWord}为准）` : `已从${srcWord}拉取 ${result.updated} 条`) + diagSuffix(result);
         if (result.failedWrites && result.failedWrites.length) {
           msg += `\n⚠️ 有 ${result.failedWrites.length} 条写入本机失败（多为照片等大体积数据，本地存储容量不足），请在电脑端压缩照片或减少照片数量后再同步`;
         }
         toast(msg);
       } else {
-        toast(`云端数据与本地一致（无更新）` + diagSuffix(result) + `\n若你刚在电脑端改了数据，请先在电脑端点「⬆ 上传到云端」再拉取`);
+        const cfg2 = loadCloudConfig() || {};
+        if (cfg2.syncMode === 'server') toast(`服务器数据与本地一致（无更新）` + diagSuffix(result));
+        else toast(`云端数据与本地一致（无更新）` + diagSuffix(result) + `\n若你刚在电脑端改了数据，请先在电脑端点「⬆ 上传到云端」再拉取`);
       }
     }
     return result.updated;
@@ -704,12 +731,23 @@ function updateSyncLogView() {
       }).join('')}
     </div>`;
   const idCfg = loadCloudConfig() || {};
-  const identity = `
+  let identity;
+  if (idCfg.syncMode === 'server') {
+    const mask = (t) => t ? (t.length > 6 ? t.slice(0, 3) + '***' + t.slice(-3) : '***') : '(未设置)';
+    identity = `
+    <div class="sync-identity">
+      <div class="sync-identity-title">🔑 本机同步身份（多设备填<b>完全相同的服务器地址与访问令牌</b>，否则各读各的）</div>
+      <div class="sync-identity-row">服务器：<b>${escapeHtml(idCfg.serverUrl || '(未设置)')}</b></div>
+      <div class="sync-identity-row">令牌：<b>${mask(idCfg.serverToken)}</b></div>
+    </div>`;
+  } else {
+    identity = `
     <div class="sync-identity">
       <div class="sync-identity-title">🔑 本机同步身份（另一台设备必须<b>完全一致</b>，否则会读写不同的云端文件、互相看不到数据）</div>
       <div class="sync-identity-row">仓库：<b>${escapeHtml((idCfg.owner || '?') + '/' + (idCfg.repo || '?'))}</b></div>
       <div class="sync-identity-row">同步码：<b>${escapeHtml(idCfg.syncCode || '(未设置)')}</b></div>
     </div>`;
+  }
   el.innerHTML = `
     ${identity}
     <div class="sync-log-row"><span class="sync-log-dot up"></span>上次上传：<b>${pushTxt}</b></div>
@@ -771,68 +809,116 @@ const NETWORK_HELP = `
 `;
 
 export function openSyncSettings() {
-  const cfg = loadCloudConfig() || { pat: '', owner: '', repo: '', syncCode: '', customProxy: '' };
+  const cfg = loadCloudConfig() || {};
+  const mode = cfg.syncMode || 'github';
+  const g = { pat: cfg.pat || '', owner: cfg.owner || '', repo: cfg.repo || '', syncCode: cfg.syncCode || '', customProxy: cfg.customProxy || '' };
+  const s = { serverUrl: cfg.serverUrl || '', serverToken: cfg.serverToken || '' };
   const enabled = isCloudEnabled();
+  const enabledLabel = enabled ? ('✅ 已启用（' + (mode === 'server' ? '自有服务器模式' : 'GitHub 模式') + '）') : '⚪ 未启用';
   openModal({
-    title: '云同步设置（GitHub 版 · 手动同步）',
+    title: '云同步设置',
     size: 'lg',
     body: `
-      <div class="form-hint">
-        多端填写<b>相同的 GitHub Token、仓库和同步码</b>即可共享数据。同步码相当于密码，请勿泄露。<br>
-        数据存在你自己的私有仓库 <code>data/&lt;同步码&gt;.json</code> 里（独立 wb-sync 分支），纯前端直连 GitHub API，<b>零后端、零付费</b>。<br>
-        <b>本工作台不会后台自动同步</b>，全部由你手动点「上传」或「拉取」触发。
+      <div class='form-hint'>
+        两种同步方式任选其一：<b>GitHub 模式</b>（免费、数据在你私有仓库，需 VPN）或 <b>自有服务器模式</b>（数据在你自己的服务器，多设备免同步、免 VPN）。<br>
+        切到「自有服务器」并填好地址+令牌后，启动会自动拉取、改动会自动上传，<b>无需手动点同步</b>。
       </div>
-      <details class="sync-guide">
-        <summary>📌 第一次用？点开看怎么准备（约 10 分钟，免费）</summary>
-        ${GUIDE_STEPS}
-      </details>
-      <details class="sync-guide">
-        <summary>🛟 测试连接一直失败？点开看网络自救指南（约 5 分钟）</summary>
-        ${NETWORK_HELP}
-      </details>
-      <label class="form-label">GitHub Token（ghp_ 开头，仅存本机）</label>
-      <input class="input" id="cloudPat" value="${escapeHtml(cfg.pat || '')}" placeholder="ghp_xxxx 个人访问令牌（需 repo 权限）" />
-      <label class="form-label">Owner（仓库所有者用户名）</label>
-      <input class="input" id="cloudOwner" value="${escapeHtml(cfg.owner || '')}" placeholder="例如 liling678" />
-      <label class="form-label">Repository（仓库名）</label>
-      <input class="input" id="cloudRepo" value="${escapeHtml(cfg.repo || '')}" placeholder="例如 my-workbench" />
-      <label class="form-label">同步码（多端一致，相当于密码）</label>
-      <input class="input" id="cloudCode" value="${escapeHtml(cfg.syncCode || '')}" placeholder="自定义，例如 yuan2026" />
-      <label class="form-label">自有代理 URL（可选，<b>直连 GitHub 不通时填</b>）</label>
-      <input class="input" id="cloudProxy" value="${escapeHtml(cfg.customProxy || '')}" placeholder="例：https://xxx.workers.dev/ （结尾有没有 ?url= 都可以，代码会自动补）" />
-      <div class="form-hint" style="font-size:12px;color:#888;margin-top:-4px;margin-bottom:8px">
-        填了之后所有请求都优先走这个代理（Cloudflare Worker 之类）。代码会自动识别并补 <code>?url=</code>，<b>不需要手动加</b>。
+      <div class='sync-mode-tabs' style='display:flex;gap:16px;margin:10px 0;flex-wrap:wrap'>
+        <label style='cursor:pointer'><input type='radio' name='syncMode' value='github' ${mode === 'github' ? 'checked' : ''}/> GitHub 模式</label>
+        <label style='cursor:pointer'><input type='radio' name='syncMode' value='server' ${mode === 'server' ? 'checked' : ''}/> 自有服务器模式</label>
       </div>
-      <div class="form-status" id="cloudStatus">${enabled ? '✅ 已启用（手动同步模式）' : '⚪ 未启用'}</div>
 
-      <div class="sync-actions">
-        <button class="btn btn-primary" id="cloudPullBtn">⬇ 从云端拉取</button>
-        <button class="btn btn-ghost" id="cloudPushBtn">⬆ 上传到云端</button>
-        <button class="btn btn-warn" id="cloudForcePullBtn">⬇ 强制覆盖拉取（以云端为准）</button>
-        <button class="btn btn-warn" id="cloudForcePushBtn">⬆ 强制覆盖上传（以本地为准）</button>
+      <div id='githubFields' style='display:${mode === 'github' ? 'block' : 'none'}'>
+        <details class='sync-guide' open>
+          <summary>📌 GitHub 模式配置（约 10 分钟，免费）</summary>
+          ${GUIDE_STEPS}
+        </details>
+        <label class='form-label'>GitHub Token</label>
+        <input class='input' id='cloudPat' value='${escapeHtml(g.pat)}' placeholder='ghp_xxxx' />
+        <label class='form-label'>Owner</label>
+        <input class='input' id='cloudOwner' value='${escapeHtml(g.owner)}' placeholder='例如 liling678' />
+        <label class='form-label'>Repository</label>
+        <input class='input' id='cloudRepo' value='${escapeHtml(g.repo)}' placeholder='例如 my-workbench' />
+        <label class='form-label'>同步码</label>
+        <input class='input' id='cloudCode' value='${escapeHtml(g.syncCode)}' placeholder='自定义，例如 yuan2026' />
+        <label class='form-label'>自有代理 URL（可选）</label>
+        <input class='input' id='cloudProxy' value='${escapeHtml(g.customProxy)}' placeholder='例：https://xxx.workers.dev/' />
+        <details class='sync-guide'>
+          <summary>🛟 测试连接失败？网络自救指南</summary>
+          ${NETWORK_HELP}
+        </details>
       </div>
-      <div class="form-hint" style="margin-top:6px">
-        ⚠️ 「强制覆盖」会单向覆盖、不合并：手机点「强制拉取」会丢弃手机本地独有数据、完全变成云端内容；电脑点「强制上传」会用电脑数据覆盖云端（含删除云端独有键）。<b>标准同步请用上面两个普通按钮</b>，只有当普通拉取一直报「一致」却拿不到数据时，才用强制按钮确认流程。
+
+      <div id='serverFields' style='display:${mode === 'server' ? 'block' : 'none'}'>
+        <div class='form-hint'>
+          在阿里云等自己的服务器上运行 <code>server.js</code>（Node 零依赖），然后用下面的地址+令牌连接。<br>
+          多设备填<b>相同的服务器地址和访问令牌</b>即共享同一份数据。详见部署指南。
+        </div>
+        <label class='form-label'>服务器地址</label>
+        <input class='input' id='serverUrl' value='${escapeHtml(s.serverUrl)}' placeholder='http://你的公网IP:3000' />
+        <label class='form-label'>访问令牌（Token）</label>
+        <input class='input' id='serverToken' value='${escapeHtml(s.serverToken)}' placeholder='与服务器启动时控制台显示的令牌一致' />
+        <div class='form-hint' style='font-size:12px;color:#888;margin-top:4px'>
+          令牌是服务器 <code>server.js</code> 启动时在控制台打印的（或 server-config.json 里的 token），只有你自己知道，相当于密码。
+        </div>
       </div>
-      <div class="sync-log" id="cloudSyncLog"></div>
-      <div class="form-hint" style="margin-top:8px">
-        用法：A 设备改完数据 → 点「⬆ 上传到云端」存到 GitHub；B 设备点「⬇ 从云端拉取」下载（拉取后界面自动刷新，无需重启）。
+
+      <div class='form-status' id='cloudStatus'>${enabledLabel}</div>
+
+      <div class='sync-actions'>
+        <button class='btn btn-primary' id='cloudPullBtn'>⬇ 从云端拉取</button>
+        <button class='btn btn-ghost' id='cloudPushBtn'>⬆ 上传到云端</button>
+        <button class='btn btn-warn' id='cloudForcePullBtn'>⬇ 强制覆盖拉取</button>
+        <button class='btn btn-warn' id='cloudForcePushBtn'>⬆ 强制覆盖上传</button>
       </div>
+      <div class='form-hint' style='margin-top:6px'>
+        ⚠️ 「强制覆盖」单向覆盖不合并。标准同步用普通按钮即可；自有服务器模式下启动会自动拉取、改动会自动上传，通常不用手动点。
+      </div>
+      <div class='sync-log' id='cloudSyncLog'></div>
     `,
     foot: `
-      <button class="btn btn-ghost" id="cloudTestBtn">测试连接</button>
-      <button class="btn btn-primary" id="cloudSaveBtn">保存设置</button>
+      <button class='btn btn-ghost' id='cloudTestBtn'>测试连接</button>
+      <button class='btn btn-primary' id='cloudSaveBtn'>保存设置</button>
     `
   });
   updateSyncLogView();
+
+  // 模式切换显隐
+  const modeRadios = document.querySelectorAll('input[name=syncMode]');
+  if (modeRadios) modeRadios.forEach(r => r.addEventListener('change', () => {
+    const m = document.querySelector('input[name=syncMode]:checked').value;
+    const gf = document.getElementById('githubFields');
+    const sf = document.getElementById('serverFields');
+    if (gf) gf.style.display = m === 'github' ? 'block' : 'none';
+    if (sf) sf.style.display = m === 'server' ? 'block' : 'none';
+  }));
+
   document.getElementById('cloudTestBtn').onclick = async () => {
+    const m = document.querySelector('input[name=syncMode]:checked').value;
+    if (m === 'server') {
+      const serverUrl = document.getElementById('serverUrl').value.trim();
+      const serverToken = document.getElementById('serverToken').value.trim();
+      if (!serverUrl || !serverToken) { toast('先填服务器地址和访问令牌'); return; }
+      try {
+        const base = serverUrl.replace(/\/+$/, '');
+        const hRes = await fetch(base + '/api/health');
+        if (!hRes.ok) return toast('❌ 服务器无响应：' + hRes.status);
+        const dRes = await fetch(base + '/api/data', { headers: { 'Authorization': 'Bearer ' + serverToken } });
+        if (dRes.status === 401) return toast('❌ 令牌无效，检查「访问令牌」');
+        if (!dRes.ok) return toast('❌ 读取数据失败：' + dRes.status);
+        const json = await dRes.json();
+        const n = Object.keys(json.data || {}).length;
+        toast('✅ 服务器连接成功，云端已有 ' + n + ' 类数据');
+      } catch (e) { toast('连接失败：' + (e.message || '网络错误') + '\n请确认服务器已启动、端口已放行防火墙'); }
+      return;
+    }
+    // ===== GitHub 模式测试（原逻辑） =====
     const owner = document.getElementById('cloudOwner').value.trim();
     const repo = document.getElementById('cloudRepo').value.trim();
     const pat = document.getElementById('cloudPat').value.trim();
     const syncCode = document.getElementById('cloudCode').value.trim();
     const proxy = document.getElementById('cloudProxy').value.trim();
     if (!owner || !repo || !pat) { toast('先填 Owner / Repository / Token'); return; }
-    // 把当前输入框的值先写入 storage，让后续读取同步文件等诊断逻辑用到最新配置
     deadProxies.clear();
     const cfg = loadCloudConfig() || { pat, owner, repo, syncCode: syncCode || '', customProxy: proxy };
     cfg.pat = pat; cfg.owner = owner; cfg.repo = repo;
@@ -841,7 +927,6 @@ export function openSyncSettings() {
     saveCloudConfig(cfg);
     ready = false;
     await initCloud();
-
     try {
       const res = await ghFetch(`https://api.github.com/repos/${owner}/${repo}`, {
         headers: { 'Authorization': 'Bearer ' + pat, 'Accept': 'application/vnd.github+json' }
@@ -849,46 +934,55 @@ export function openSyncSettings() {
       if (res.status === 401) return toast('❌ Token 无效或权限不足（确认勾了 repo）');
       if (res.status === 404) return toast('❌ 仓库不存在，检查 Owner / Repository');
       if (!res.ok) return toast('❌ 连接失败：' + res.status);
-
-      // 再尝试读取同步文件，给出更直观的诊断
       let fileInfo = '';
       if (syncCode) {
         try {
           const remote = await readRemote();
-          if (remote && remote.notFound) {
-            fileInfo = `\n⚠️ 云端还没有此同步码的数据文件。请先在另一设备点「上传到云端」。`;
-          } else if (remote && remote.data) {
-            const keys = Object.keys(remote.data).length;
-            fileInfo = `\n同步文件存在：${keys} 条数据，云端最后更新：${fmtDateTime(remote.lastCommit)}`;
-          } else {
-            fileInfo = `\n读取同步文件返回异常`;
-          }
+          if (remote && remote.notFound) fileInfo = '\n⚠️ 云端还没有此同步码的数据文件。请先在另一设备点「上传到云端」。';
+          else if (remote && remote.data) fileInfo = '\n同步文件存在：' + Object.keys(remote.data).length + ' 条数据，云端最后更新：' + fmtDateTime(remote.lastCommit);
+          else fileInfo = '\n读取同步文件返回异常';
         } catch (fe) { fileInfo = '\n读取同步文件时出错：' + (fe.message || '网络错误'); }
-      } else {
-        fileInfo = '\n填写「同步码」后可进一步检测云端数据文件。';
-      }
-
+      } else fileInfo = '\n填写「同步码」后可进一步检测云端数据文件。';
       toast('✅ 连接成功，仓库可达' + fileInfo);
     } catch (e) { toast('连接失败：' + (e.message || '网络错误') + '\n点开上方「网络自救指南」看看怎么办'); }
   };
+
   document.getElementById('cloudSaveBtn').onclick = async () => {
+    const m = document.querySelector('input[name=syncMode]:checked').value;
+    deadProxies.clear();
+    if (m === 'server') {
+      const serverUrl = document.getElementById('serverUrl').value.trim();
+      const serverToken = document.getElementById('serverToken').value.trim();
+      if (!serverUrl || !serverToken) { toast('请填写服务器地址和访问令牌'); return; }
+      saveCloudConfig({ syncMode: 'server', serverUrl, serverToken });
+      ready = false;
+      const ok = await initCloud();
+      if (!ok) { toast('保存失败，检查服务器地址/令牌或网络'); return; }
+      const st = document.getElementById('cloudStatus');
+      if (st) st.innerHTML = '✅ 已保存（自有服务器模式，启动自动同步）';
+      setStatus('idle');
+      updateSyncLogView();
+      toast('已切换到自有服务器，数据将自动同步');
+      return;
+    }
+    // ===== GitHub 模式保存（原逻辑） =====
     const owner = document.getElementById('cloudOwner').value.trim();
     const repo = document.getElementById('cloudRepo').value.trim();
     const pat = document.getElementById('cloudPat').value.trim();
     const syncCode = document.getElementById('cloudCode').value.trim();
     const customProxy = document.getElementById('cloudProxy').value.trim();
     if (!owner || !repo || !pat || !syncCode) { toast('四项都要填写'); return; }
-    // 重置代理缓存（用户改了代理配置，让 deadProxies 失效，下次重新探测）
-    deadProxies.clear();
-    saveCloudConfig({ pat, owner, repo, syncCode, customProxy });
+    saveCloudConfig({ syncMode: 'github', pat, owner, repo, syncCode, customProxy });
     ready = false;
     const ok = await initCloud();
     if (!ok) { toast('保存失败，检查 Token / 仓库或网络'); return; }
     const st = document.getElementById('cloudStatus');
-    if (st) st.innerHTML = '✅ 已保存并验证通过（手动同步模式）';
+    if (st) st.innerHTML = '✅ 已保存并验证通过（GitHub 模式）';
     setStatus('idle');
+    updateSyncLogView();
     toast('设置已保存，可点「上传」或「拉取」');
   };
+
   document.getElementById('cloudPushBtn').onclick = async () => {
     if (!ready) { toast('请先点「保存设置」'); return; }
     await pushNow(true);
@@ -923,4 +1017,50 @@ export async function cloudUrl(ref) {
 
 export function installCloudImageHydrator() {
   // GitHub 模式无需解析 supa://（已弃 Supabase），业务层用 base64 直接显示
+}
+
+// ===================== 自有服务器模式（syncMode === 'server'） =====================
+// 把工作台数据读写到用户自己的服务器（server.js），多设备访问同一地址即同一份数据。
+// 复用现有自动拉取/上传/智能合并架构，仅 transport 不同（GitHub API → 自有 /api/data）。
+
+function serverFetch(url, options = {}) {
+  const cfg = loadCloudConfig() || {};
+  const headers = Object.assign({}, options.headers, { 'Authorization': 'Bearer ' + (cfg.serverToken || '') });
+  return fetch(url, Object.assign({}, options, { headers }));
+}
+
+function serverBase() {
+  const cfg = loadCloudConfig() || {};
+  return (cfg.serverUrl || '').replace(/\/+$/, '');
+}
+
+async function readRemoteServer() {
+  const res = await serverFetch(serverBase() + '/api/data');
+  if (res.status === 401) throw new Error('服务器令牌无效，请检查「访问令牌」');
+  if (res.status === 404) return { notFound: true };
+  if (!res.ok) throw new Error('读取服务器失败：HTTP ' + res.status);
+  const json = await res.json();
+  return { notFound: false, ts: json.ts || {}, data: json.data || {}, lastCommit: new Date().toISOString() };
+}
+
+async function writeRemoteServer(opts = {}) {
+  const local = Storage.exportAll();
+  const localTs = loadTs();
+  const newTs = Object.assign({}, localTs);
+  const newData = {};
+  const localKeys = Object.keys(local).filter(k => k !== CONFIG_KEY && k !== TS_KEY && k !== SYNC_LOG_KEY);
+  let pushed = 0;
+  for (const key of localKeys) {
+    newData[key] = local[key];
+    newTs[key] = Math.max(localTs[key] || 0, Date.now());
+    pushed++;
+  }
+  const res = await serverFetch(serverBase() + '/api/data', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ts: newTs, data: newData, force: !!opts.force })
+  });
+  if (res.status === 401) throw new Error('服务器令牌无效，请检查「访问令牌」');
+  if (!res.ok) throw new Error('写入服务器失败：HTTP ' + res.status);
+  return pushed;
 }
